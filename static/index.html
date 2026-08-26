@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Usage Tracker</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --track: #21262d;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    padding: 32px 20px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 8px;
+  }
+  h1 { font-size: 22px; font-weight: 600; }
+  .meta { color: var(--muted); font-size: 13px; display: flex; gap: 14px; align-items: center; }
+  button {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 14px; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+  }
+  .card h2 {
+    font-size: 16px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 2px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .plan {
+    color: var(--muted); font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 14px;
+  }
+  .bar-row { margin-bottom: 14px; }
+  .bar-head {
+    display: flex; justify-content: space-between;
+    font-size: 13px; margin-bottom: 5px;
+  }
+  .bar-head .pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .track { background: var(--track); border-radius: 5px; height: 9px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 5px; transition: width .4s ease; min-width: 2px; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .bigstat { font-size: 26px; font-weight: 700; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+  .bigstat span { font-size: 14px; color: var(--muted); font-weight: 400; }
+  .footer-note { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  .error { color: var(--red); font-size: 13px; line-height: 1.5; }
+  .skeleton { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>AI Usage Tracker</h1>
+    <div class="meta">
+      <span id="updated">loading…</span>
+      <button id="refresh">Refresh</button>
+    </div>
+  </header>
+  <div class="grid" id="grid">
+    <div class="card"><h2>Claude</h2><div class="skeleton">loading…</div></div>
+    <div class="card"><h2>Codex</h2><div class="skeleton">loading…</div></div>
+    <div class="card"><h2>Cursor</h2><div class="skeleton">loading…</div></div>
+  </div>
+</div>
+
+<script>
+const SERVICES = [
+  { id: "claude", name: "Claude", color: "#d97757" },
+  { id: "codex",  name: "Codex",  color: "#74aa9c" },
+  { id: "cursor", name: "Cursor", color: "#7aa2f7" },
+];
+
+function fillColor(pct) {
+  if (pct >= 90) return "var(--red)";
+  if (pct >= 70) return "var(--yellow)";
+  return "var(--green)";
+}
+
+function fmtReset(epoch) {
+  if (!epoch) return "";
+  const diff = epoch * 1000 - Date.now();
+  if (diff <= 0) return "window already reset — data may be stale";
+  const h = Math.floor(diff / 3.6e6), m = Math.round((diff % 3.6e6) / 6e4);
+  if (h >= 48) return `resets in ${Math.round(h / 24)}d`;
+  if (h > 0) return `resets in ${h}h ${m}m`;
+  return `resets in ${m}m`;
+}
+
+function fmtAgo(epoch) {
+  if (!epoch) return "";
+  const s = Math.max(0, Math.round(Date.now() / 1000 - epoch));
+  if (s < 90) return "just now";
+  if (s < 5400) return `${Math.round(s / 60)} min ago`;
+  if (s < 172800) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
+}
+
+function bar(label, pct, resetsAt) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  return `<div class="bar-row">
+    <div class="bar-head"><span>${label}</span><span class="pct">${pct}% used</span></div>
+    <div class="track"><div class="fill" style="width:${clamped}%;background:${fillColor(clamped)}"></div></div>
+    <div class="sub">${fmtReset(resetsAt)}</div>
+  </div>`;
+}
+
+function renderWindows(d) {
+  let html = (d.windows || []).map(w => bar(w.label, w.used_percent, w.resets_at)).join("");
+  return html || `<div class="error">no rate-limit windows reported</div>`;
+}
+
+function renderCursor(d) {
+  const money = (v) => "$" + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  let html = `<div class="bigstat">${money(d.remaining_usd)} <span>left of ${money(d.limit_usd)}</span></div>
+    <div class="sub" style="margin-bottom:12px">${money(d.used_usd)} used this cycle</div>`;
+  html += bar("Included usage", d.percent_used, d.cycle_end);
+  if (d.on_demand) {
+    html += `<div class="sub">On-demand: ${money(d.on_demand.used_usd)} used${d.on_demand.limit_usd ? " of " + money(d.on_demand.limit_usd) : ""}</div>`;
+  }
+  return html;
+}
+
+function renderCard(svc, d) {
+  let inner;
+  if (!d || !d.ok) {
+    inner = `<div class="error">${(d && d.error) || "no data"}</div>`;
+  } else if (svc.id === "cursor") {
+    inner = renderCursor(d);
+  } else {
+    inner = renderWindows(d);
+    if (svc.id === "codex" && d.has_credits) {
+      inner += `<div class="sub">credits balance: ${d.credits_balance}</div>`;
+    }
+  }
+  const plan = d && d.plan ? `<div class="plan">${d.plan}</div>` : `<div class="plan">&nbsp;</div>`;
+  const note = d && d.ok
+    ? `<div class="footer-note">as of ${fmtAgo(d.as_of)} · ${d.source || ""}</div>` : "";
+  return `<div class="card">
+    <h2><span class="dot" style="background:${svc.color}"></span>${svc.name}</h2>
+    ${plan}${inner}${note}
+  </div>`;
+}
+
+let lastData = null;
+
+async function load(force) {
+  const btn = document.getElementById("refresh");
+  btn.disabled = true; btn.textContent = "…";
+  try {
+    const resp = await fetch("/api/usage" + (force ? "?refresh=1" : ""));
+    lastData = await resp.json();
+    render();
+  } catch (e) {
+    document.getElementById("updated").textContent = "fetch failed — is the server running?";
+  } finally {
+    btn.disabled = false; btn.textContent = "Refresh";
+  }
+}
+
+function render() {
+  if (!lastData) return;
+  document.getElementById("grid").innerHTML =
+    SERVICES.map(s => renderCard(s, lastData.services[s.id])).join("");
+  document.getElementById("updated").textContent =
+    "updated " + new Date(lastData.fetched_at * 1000).toLocaleTimeString();
+}
+
+document.getElementById("refresh").addEventListener("click", () => load(true));
+load(false);
+setInterval(() => load(false), 60000);
+setInterval(render, 30000); // keep countdowns fresh
+</script>
+</body>
+</html>
