@@ -68,6 +68,29 @@
   .footer-note { color: var(--muted); font-size: 12px; margin-top: 12px; }
   .error { color: var(--red); font-size: 13px; line-height: 1.5; }
   .skeleton { color: var(--muted); font-size: 13px; }
+  .section-title { font-size: 16px; font-weight: 600; margin: 28px 0 12px; }
+  .share-track {
+    display: flex; height: 12px; border-radius: 6px; overflow: hidden;
+    background: var(--track); margin-bottom: 8px;
+  }
+  .share-track div { height: 100%; }
+  .legend { display: flex; gap: 18px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .legend .dot { width: 8px; height: 8px; margin-right: 5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 14px; }
+  th {
+    text-align: left; color: var(--muted); font-weight: 500; font-size: 12px;
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .task-cell { color: var(--muted); max-width: 480px; }
+  .ok-mark { color: var(--green); }
+  .fail-mark { color: var(--red); }
+  .agent-cell { white-space: nowrap; font-weight: 600; }
+  .mode-tag {
+    font-size: 11px; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px;
+  }
 </style>
 </head>
 <body>
@@ -84,6 +107,8 @@
     <div class="card"><h2>Codex</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Cursor</h2><div class="skeleton">loading…</div></div>
   </div>
+  <div class="section-title">Dispatch routing</div>
+  <div class="card" id="dispatches"><div class="skeleton">loading…</div></div>
 </div>
 
 <script>
@@ -164,14 +189,65 @@ function renderCard(svc, d) {
   </div>`;
 }
 
+function agentColor(agent) {
+  const svc = SERVICES.find(s => s.id === agent);
+  return svc ? svc.color : "var(--muted)";
+}
+
+function esc(s) {
+  const div = document.createElement("div");
+  div.textContent = s == null ? "" : String(s);
+  return div.innerHTML;
+}
+
+function renderDispatches(data) {
+  const records = (data && data.records) || [];
+  const stats = (data && data.stats) || {};
+  if (!records.length) {
+    return `<div class="skeleton">No dispatches yet — run <b>./ai "some task"</b> and routing decisions will show up here.</div>`;
+  }
+  const total = records.length;
+  const shareBar = SERVICES
+    .filter(s => stats[s.id])
+    .map(s => `<div style="width:${(stats[s.id].total / total * 100).toFixed(1)}%;background:${s.color}"></div>`)
+    .join("");
+  const legend = SERVICES
+    .filter(s => stats[s.id])
+    .map(s => `<span><span class="dot" style="background:${s.color}"></span>${s.name}: ${stats[s.id].total} total · ${stats[s.id].last_24h} in 24h</span>`)
+    .join("");
+  const rows = records.slice(0, 20).map(r => {
+    const exit = r.mode === "interactive"
+      ? `<span class="mode-tag">interactive</span>`
+      : (r.exit_code === 0 ? `<span class="ok-mark">✓ ok</span>` : `<span class="fail-mark">✗ exit ${esc(r.exit_code)}</span>`);
+    const why = r.forced ? "forced with --agent" : r.reason;
+    return `<tr>
+      <td style="white-space:nowrap">${fmtAgo(r.ts)}</td>
+      <td class="agent-cell"><span class="dot" style="background:${agentColor(r.agent)}"></span> ${esc(r.agent)}</td>
+      <td>${exit}</td>
+      <td class="task-cell">${esc(r.task)}<div class="sub">${esc(why)}</div></td>
+    </tr>`;
+  }).join("");
+  return `<div class="share-track">${shareBar}</div>
+    <div class="legend">${legend}</div>
+    <table>
+      <tr><th>when</th><th>agent</th><th>result</th><th>task &amp; routing reason</th></tr>
+      ${rows}
+    </table>`;
+}
+
 let lastData = null;
+let lastDispatches = null;
 
 async function load(force) {
   const btn = document.getElementById("refresh");
   btn.disabled = true; btn.textContent = "…";
   try {
-    const resp = await fetch("/api/usage" + (force ? "?refresh=1" : ""));
-    lastData = await resp.json();
+    const [usageResp, dispatchResp] = await Promise.all([
+      fetch("/api/usage" + (force ? "?refresh=1" : "")),
+      fetch("/api/dispatches"),
+    ]);
+    lastData = await usageResp.json();
+    lastDispatches = await dispatchResp.json();
     render();
   } catch (e) {
     document.getElementById("updated").textContent = "fetch failed — is the server running?";
@@ -184,6 +260,7 @@ function render() {
   if (!lastData) return;
   document.getElementById("grid").innerHTML =
     SERVICES.map(s => renderCard(s, lastData.services[s.id])).join("");
+  document.getElementById("dispatches").innerHTML = renderDispatches(lastDispatches);
   document.getElementById("updated").textContent =
     "updated " + new Date(lastData.fetched_at * 1000).toLocaleTimeString();
 }

@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Route a coding task to whichever vendor CLI still has quota headroom.
+
+    ai                     show status and which agent would be picked
+    ai "fix the flaky test in test_router.py"
+    ai -p "summarise the diff on this branch"
+    ai --agent codex "port this module to async"
+"""
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from dispatcher import launch as launcher
+from dispatcher.config import load_config
+from dispatcher.routing import choose_agent
+
+USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def paint(text, code):
+    return f"\033[{code}m{text}\033[0m" if USE_COLOR else text
+
+
+def green(t):
+    return paint(t, "32")
+
+
+def red(t):
+    return paint(t, "31")
+
+
+def dim(t):
+    return paint(t, "2")
+
+
+def bold(t):
+    return paint(t, "1")
+
+
+def plan_of(services, agent):
+    service = services.get(agent)
+    plan = service.get("plan") if isinstance(service, dict) else None
+    return str(plan) if plan else "-"
+
+
+def print_status(services, decision):
+    print(bold("usage-tracker dispatcher"))
+    print()
+    for a in decision.assessments:
+        state = green("eligible") if a.eligible else red("blocked ")
+        headroom = f"{a.headroom:5.1f}%" if a.headroom is not None else f"{'-':>6}"
+        plan = plan_of(services, a.agent)
+        print(f"  {a.agent:<8} {plan:<8} {state}  headroom {headroom}")
+        print(f"  {'':<8} {dim(a.reason)}")
+        print()
+
+    if decision.agent:
+        print(f"{green('→')} would dispatch to: {bold(decision.agent)} ({decision.reason})")
+    else:
+        print(f"{red('→')} would dispatch to: nothing available ({decision.reason})")
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser(
+        prog="ai",
+        description="Dispatch a coding task to the AI CLI with the most quota left.",
+    )
+    parser.add_argument("task", nargs="*", help="the task to hand to the agent")
+    parser.add_argument("--status", action="store_true",
+                        help="show agent status and the routing decision, then exit")
+    parser.add_argument("-p", "--print", dest="headless", action="store_true",
+                        help="headless mode: run the task non-interactively and print the result")
+    parser.add_argument("--agent", choices=sorted(launcher.AGENT_COMMANDS),
+                        help="skip routing and use this agent")
+    parser.add_argument("--no-journal", dest="journal", action="store_false",
+                        help="do not read from or write to SESSION.md")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    task = " ".join(args.task).strip()
+
+    config = load_config()
+    services = launcher.fetch_usage(config)
+    installed = launcher.installed_agents()
+    decision = choose_agent(services, config, installed, override=args.agent)
+
+    if args.status or not task:
+        print_status(services, decision)
+        return 0
+
+    if decision.agent is None:
+        print(f"no agent available: {decision.reason}", file=sys.stderr)
+        return 1
+
+    # flush now so this lands before the agent's own output when stdout is a pipe
+    print(f"dispatching to {bold(decision.agent)} ({decision.reason}) ...", flush=True)
+    return launcher.launch(decision.agent, task, args.headless, args.journal,
+                           reason=decision.reason, forced=args.agent is not None)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

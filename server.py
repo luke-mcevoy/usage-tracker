@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+from dispatcher import launch as dispatcher_launch
 from providers import claude, codex, cursor
 
 HOST = "127.0.0.1"
@@ -48,6 +49,21 @@ def _get_all(force):
         return {name: fut.result() for name, fut in futures.items()}
 
 
+def _dispatch_stats(records):
+    now = time.time()
+    counts = {}
+    for r in records:
+        agent = r.get("agent", "?")
+        c = counts.setdefault(agent, {"total": 0, "last_24h": 0, "last_7d": 0})
+        c["total"] += 1
+        age = now - r.get("ts", 0)
+        if age < 86400:
+            c["last_24h"] += 1
+        if age < 7 * 86400:
+            c["last_7d"] += 1
+    return counts
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -56,6 +72,10 @@ class Handler(BaseHTTPRequestHandler):
             payload = {"fetched_at": int(time.time()), "services": _get_all(force)}
             body = json.dumps(payload).encode()
             self._respond(200, "application/json", body)
+        elif parsed.path == "/api/dispatches":
+            records = dispatcher_launch.read_dispatch_log(limit=100)
+            payload = {"records": records, "stats": _dispatch_stats(records)}
+            self._respond(200, "application/json", json.dumps(payload).encode())
         elif parsed.path in ("/", "/index.html"):
             with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
                 self._respond(200, "text/html; charset=utf-8", f.read())
