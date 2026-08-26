@@ -74,6 +74,9 @@ def build_command(agent, prompt, headless):
     if agent == "codex":
         # --skip-git-repo-check: codex exec otherwise refuses to run outside a git repo
         return [cmd, "exec", "--skip-git-repo-check", prompt]
+    if agent == "cursor":
+        # -f trusts the working directory; headless runs otherwise stop at a trust prompt
+        return [cmd, "-f", "-p", prompt]
     return [cmd, "-p", prompt]
 
 

@@ -116,11 +116,16 @@ def _read_snapshot():
         for key in ("five_hour", "seven_day"):
             val = limits.get(key)
             if isinstance(val, dict) and val.get("used_percentage") is not None:
+                resets_at = _epoch(val.get("resets_at"))
+                # A window whose reset time already passed is stale data from an
+                # idle session re-rendering old rate limits; don't trust it.
+                if resets_at and resets_at < time.time():
+                    continue
                 windows.append({
                     "key": key,
                     "label": WINDOW_LABELS[key],
                     "used_percent": round(float(val["used_percentage"]), 1),
-                    "resets_at": _epoch(val.get("resets_at")),
+                    "resets_at": resets_at,
                 })
         if windows:
             return {"as_of": snap.get("ts", 0), "windows": windows, "source": "statusline snapshot"}
