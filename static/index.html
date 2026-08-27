@@ -91,6 +91,12 @@
     font-size: 11px; color: var(--muted); border: 1px solid var(--border);
     border-radius: 4px; padding: 1px 6px;
   }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+  .chart-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .chart svg { width: 100%; height: 150px; display: block; }
+  .chart .axis { font-size: 10px; fill: var(--muted); }
+  .chart .val { font-size: 10px; fill: var(--text); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -108,6 +114,8 @@
     <div class="card"><h2>Gemini</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Cursor</h2><div class="skeleton">loading…</div></div>
   </div>
+  <div class="section-title">Daily analytics</div>
+  <div class="card" id="history"><div class="skeleton">loading…</div></div>
   <div class="section-title">Dispatch routing</div>
   <div class="card" id="dispatches"><div class="skeleton">loading…</div></div>
 </div>
@@ -240,19 +248,96 @@ function renderDispatches(data) {
     </table>`;
 }
 
+function barChart(days, valueOf, opts) {
+  // days: array of day rows; valueOf(day) -> number or [{value,color}] segments
+  const W = 460, H = 150, padB = 18, padT = 16;
+  const n = days.length;
+  if (!n) return `<div class="skeleton">no data yet</div>`;
+  const totals = days.map(d => {
+    const v = valueOf(d);
+    return Array.isArray(v) ? v.reduce((a, s) => a + s.value, 0) : v;
+  });
+  const max = Math.max(...totals, opts.minMax || 1);
+  const slot = W / n, bw = Math.min(34, slot * 0.66);
+  let out = "";
+  days.forEach((d, i) => {
+    const x = slot * i + (slot - bw) / 2;
+    const v = valueOf(d);
+    const segments = Array.isArray(v) ? v : [{ value: v, color: opts.color }];
+    let y = H - padB;
+    for (const seg of segments) {
+      const h = (seg.value / max) * (H - padB - padT);
+      if (h > 0) {
+        y -= h;
+        out += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${seg.color}"/>`;
+      }
+    }
+    if (totals[i] > 0) {
+      out += `<text class="val" x="${(x + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle">${opts.fmt(totals[i])}</text>`;
+    }
+    out += `<text class="axis" x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${d.date.slice(5)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${out}</svg>`;
+}
+
+function renderHistory(data) {
+  const days = (data && data.days) || [];
+  if (!days.length) {
+    return `<div class="skeleton">No history yet — snapshots accumulate every 10 minutes while the server runs.</div>`;
+  }
+  const money = (v) => "$" + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
+  const spendChart = barChart(days, d => d.cursor_spend_usd,
+    { color: agentColor("cursor"), fmt: money, minMax: 1 });
+  const dispatchChart = barChart(days,
+    d => SERVICES.map(s => ({ value: (d.dispatches || {})[s.id] || 0, color: s.color })),
+    { fmt: v => v, minMax: 1 });
+  const legend = SERVICES
+    .map(s => `<span><span class="dot" style="background:${s.color}"></span>${s.name}</span>`)
+    .join("");
+  const rows = days.slice(-14).reverse().map(d => {
+    const total = Object.values(d.dispatches || {}).reduce((a, b) => a + b, 0);
+    const perAgent = SERVICES
+      .filter(s => (d.dispatches || {})[s.id])
+      .map(s => `${s.name.toLowerCase()} ${d.dispatches[s.id]}`)
+      .join(" · ") || "—";
+    const peak = (k) => d.peaks && d.peaks[k] != null ? d.peaks[k] + "%" : "—";
+    return `<tr>
+      <td style="white-space:nowrap">${d.date}</td>
+      <td style="font-variant-numeric:tabular-nums">${d.cursor_spend_usd ? money(d.cursor_spend_usd) : "—"}</td>
+      <td>${peak("claude_five_hour")}</td>
+      <td>${peak("codex_primary")}</td>
+      <td>${d.peaks && d.peaks.gemini_requests != null ? d.peaks.gemini_requests : "—"}</td>
+      <td>${total || "—"}<div class="sub">${perAgent}</div></td>
+    </tr>`;
+  }).join("");
+  return `<div class="charts">
+      <div class="chart"><div class="chart-title">Cursor spend per day (measured $ deltas)</div>${spendChart}</div>
+      <div class="chart"><div class="chart-title">Dispatches per day by agent</div>${dispatchChart}
+        <div class="legend" style="margin-top:6px">${legend}</div></div>
+    </div>
+    <table>
+      <tr><th>date</th><th>cursor $</th><th>claude peak 5h</th><th>codex peak 5h</th><th>gemini reqs</th><th>dispatches</th></tr>
+      ${rows}
+    </table>
+    <div class="footer-note">Spend is summed from usage snapshots taken while the server runs; days before this feature shipped have dispatch counts only.</div>`;
+}
+
 let lastData = null;
 let lastDispatches = null;
+let lastHistory = null;
 
 async function load(force) {
   const btn = document.getElementById("refresh");
   btn.disabled = true; btn.textContent = "…";
   try {
-    const [usageResp, dispatchResp] = await Promise.all([
+    const [usageResp, dispatchResp, historyResp] = await Promise.all([
       fetch("/api/usage" + (force ? "?refresh=1" : "")),
       fetch("/api/dispatches"),
+      fetch("/api/history?days=14"),
     ]);
     lastData = await usageResp.json();
     lastDispatches = await dispatchResp.json();
+    lastHistory = await historyResp.json();
     render();
   } catch (e) {
     document.getElementById("updated").textContent = "fetch failed — is the server running?";
@@ -266,6 +351,7 @@ function render() {
   document.getElementById("grid").innerHTML =
     SERVICES.map(s => renderCard(s, lastData.services[s.id])).join("");
   document.getElementById("dispatches").innerHTML = renderDispatches(lastDispatches);
+  document.getElementById("history").innerHTML = renderHistory(lastHistory);
   document.getElementById("updated").textContent =
     "updated " + new Date(lastData.fetched_at * 1000).toLocaleTimeString();
 }

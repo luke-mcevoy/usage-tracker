@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+import history
 from dispatcher import launch as dispatcher_launch
 from providers import claude, codex, cursor, gemini
 
@@ -45,9 +46,24 @@ def _get_provider(name, force):
 
 
 def _get_all(force):
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {name: pool.submit(_get_provider, name, force) for name in PROVIDERS}
-        return {name: fut.result() for name, fut in futures.items()}
+        services = {name: fut.result() for name, fut in futures.items()}
+    history.append_snapshot(history.snapshot_from_services(services))
+    return services
+
+
+SAMPLE_INTERVAL_S = int(os.environ.get("USAGE_TRACKER_SAMPLE_S", "600"))
+
+
+def _sampler():
+    """Record usage history even when nobody has the dashboard open."""
+    while True:
+        try:
+            _get_all(force=False)
+        except Exception:
+            pass
+        time.sleep(SAMPLE_INTERVAL_S)
 
 
 def _dispatch_stats(records):
@@ -77,6 +93,16 @@ class Handler(BaseHTTPRequestHandler):
             records = dispatcher_launch.read_dispatch_log(limit=100)
             payload = {"records": records, "stats": _dispatch_stats(records)}
             self._respond(200, "application/json", json.dumps(payload).encode())
+        elif parsed.path == "/api/history":
+            try:
+                days = min(90, max(1, int(parse_qs(parsed.query).get("days", ["14"])[0])))
+            except ValueError:
+                days = 14
+            series = history.daily_series(
+                history.read_history(max_age_days=days),
+                dispatcher_launch.read_dispatch_log(limit=10000),
+                days=days)
+            self._respond(200, "application/json", json.dumps({"days": series}).encode())
         elif parsed.path in ("/", "/index.html"):
             with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
                 self._respond(200, "text/html; charset=utf-8", f.read())
@@ -97,6 +123,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    threading.Thread(target=_sampler, daemon=True).start()
     print(f"Usage tracker running at http://{HOST}:{PORT}")
     try:
         server.serve_forever()

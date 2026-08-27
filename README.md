@@ -157,6 +157,29 @@ their routing reasons and results. Use it to sanity-check your thresholds —
 e.g. if everything lands on one agent, its threshold is too generous or the
 others' too strict.
 
+### Daily analytics (spend over time)
+
+The server also keeps a usage time series in
+`~/.cache/usage-tracker/history.jsonl`: a compact snapshot of every service's
+key numbers, taken whenever fresh data is fetched and at least every 10
+minutes by a background sampler (`USAGE_TRACKER_SAMPLE_S` to change). Only
+whitelisted metrics are recorded — window percentages, cursor dollars,
+gemini request counts — never tokens or account details.
+
+`GET /api/history?days=N` folds snapshots plus the dispatch log into per-day
+rows, and the dashboard's **Daily analytics** section charts them:
+
+- **Cursor spend per day** — real measured dollars: the sum of positive
+  deltas in `used_usd` between consecutive snapshots, so a billing-cycle
+  reset never counts as negative spend.
+- **Dispatches per day by agent** — stacked bars from the dispatch log.
+- A per-day table with peak 5h-window utilization for Claude and Codex and
+  the day's Gemini request count, so you can see which days you actually
+  hit the rate-limit ceilings.
+
+Snapshots only accumulate while the server runs, so the series starts the
+day you first ran this version and densifies with uptime.
+
 ### Config
 
 Optional, at `~/.config/usage-tracker/dispatcher.json`. Anything you omit
