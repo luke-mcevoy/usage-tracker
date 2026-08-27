@@ -158,6 +158,34 @@ falls back to the defaults shown here:
 Reorder `priority` to prefer a different agent, or raise a threshold to keep
 using a service closer to its limit.
 
+### Quota breaks (protecting the reserve)
+
+Cursor is a **reserve** agent by default: its billing-cycle dollars do not
+refill every five hours the way Claude's and Codex's windows do, so blowing
+through them in a day of rate-limited afternoons is easy. When a dispatch
+would land on a reserve agent (or on nothing, or on an agent that is itself
+over its limits) *and* some preferred agent is only threshold-blocked with a
+window that resets within `wait.max_wait_minutes`, `ai` takes a quota break
+instead:
+
+```text
+quota break: codex's rate-limit window resets around 11:58 PM (~189 min).
+Waiting instead of spending cursor credits — Ctrl+C to stop, or rerun with
+--now to dispatch immediately.
+```
+
+It sleeps until the earliest useful reset (an agent counts as usable again
+only when **all** of its over-threshold windows have reset), then re-fetches
+usage with caches bypassed and re-routes, resuming only on a genuinely
+eligible non-reserve agent. If the data still shows the agent blocked after a
+`grace_minutes` polling period, it gives up with an explanation rather than
+silently spending the reserve. `--now` skips the wait entirely.
+
+Config keys (all under the defaults shown above): `reserve` (list of agents of
+last resort), `wait.enabled`, `wait.max_wait_minutes` (don't wait longer than
+this; longer resets fall through to the reserve), `wait.poll_seconds`, and
+`wait.grace_minutes`.
+
 ### SESSION.md journal
 
 Because a task may land on a different model each time, `ai` keeps a shared

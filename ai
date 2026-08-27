@@ -10,12 +10,13 @@
 import argparse
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from dispatcher import launch as launcher
 from dispatcher.config import load_config
-from dispatcher.routing import choose_agent
+from dispatcher.routing import choose_agent, plan_wait
 
 USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -77,7 +78,60 @@ def parse_args(argv):
                         help="skip routing and use this agent")
     parser.add_argument("--no-journal", dest="journal", action="store_false",
                         help="do not read from or write to SESSION.md")
+    parser.add_argument("--now", action="store_true",
+                        help="dispatch immediately, even if it spends reserve "
+                             "(e.g. cursor) credits instead of waiting for a "
+                             "rate-limit window to reset")
     return parser.parse_args(argv)
+
+
+def sleep_until(resume_at):
+    """Chunked sleep with a countdown when attached to a terminal."""
+    while True:
+        remaining = resume_at - time.time()
+        if remaining <= 0:
+            break
+        if sys.stdout.isatty():
+            print(f"\r  resuming in {int(remaining // 60)}m {int(remaining % 60):02d}s ",
+                  end="", flush=True)
+        time.sleep(min(30, max(1, remaining)))
+    if sys.stdout.isatty():
+        print()
+
+
+def wait_for_reset(plan, config, installed):
+    """Sleep through the quota break, then re-route with fresh usage data.
+
+    Returns the new Decision, or None if agents are still blocked after the
+    grace period.
+    """
+    wait_cfg = config.get("wait") or {}
+    reserve = set(config.get("reserve") or [])
+    resume_at = plan.resume_at + 60  # small buffer for the vendor to roll over
+
+    when = time.strftime("%I:%M %p", time.localtime(resume_at)).lstrip("0")
+    minutes = max(1, int((resume_at - time.time()) / 60))
+    print(f"quota break: {plan.waiting_for}'s rate-limit window resets around {when} "
+          f"(~{minutes} min). Waiting instead of spending {', '.join(sorted(reserve))} "
+          f"credits — Ctrl+C to stop, or rerun with --now to dispatch immediately.",
+          flush=True)
+    sleep_until(resume_at)
+
+    grace_s = float(wait_cfg.get("grace_minutes") or 10) * 60
+    poll_s = float(wait_cfg.get("poll_seconds") or 120)
+    deadline = time.time() + grace_s
+    while True:
+        services = launcher.fetch_usage(config, force=True)
+        decision = choose_agent(services, config, installed)
+        assessed = {a.agent: a for a in decision.assessments}
+        chosen = assessed.get(decision.agent)
+        if (decision.agent and decision.agent not in reserve
+                and chosen is not None and chosen.eligible):
+            print(f"window reset — resuming with {decision.agent}", flush=True)
+            return decision
+        if time.time() >= deadline:
+            return None
+        time.sleep(poll_s)
 
 
 def main(argv=None):
@@ -92,6 +146,15 @@ def main(argv=None):
     if args.status or not task:
         print_status(services, decision)
         return 0
+
+    if not args.now and args.agent is None:
+        plan = plan_wait(decision, config)
+        if plan:
+            decision = wait_for_reset(plan, config, installed)
+            if decision is None:
+                print("still rate-limited after the window reset; rerun with --now "
+                      "to spend reserve credits anyway", file=sys.stderr)
+                return 1
 
     if decision.agent is None:
         print(f"no agent available: {decision.reason}", file=sys.stderr)

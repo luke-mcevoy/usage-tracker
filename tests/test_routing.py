@@ -8,7 +8,8 @@ import unittest
 from unittest import mock
 
 from dispatcher import config as config_mod
-from dispatcher.routing import AgentAssessment, Decision, choose_agent
+from dispatcher.routing import (AgentAssessment, Decision, WaitPlan,
+                                choose_agent, plan_wait)
 
 ALL_INSTALLED = {"claude": True, "codex": True, "cursor": True}
 
@@ -364,6 +365,102 @@ class LoadConfigTest(unittest.TestCase):
         self.write({"priority": ["codex", "claude", "cursor"]})
         decision = choose_agent(all_services(), config_mod.load_config(), ALL_INSTALLED)
         self.assertEqual(decision.agent, "codex")
+
+
+NOW = 1_800_000_000
+
+
+def windowed_service(agent_key, five_hour, seven_day,
+                     five_hour_reset=NOW + 3600, seven_day_reset=NOW + 5 * 86400):
+    base = claude_service() if agent_key == "claude" else codex_service()
+    base["windows"][0].update(used_percent=five_hour, resets_at=five_hour_reset)
+    base["windows"][1].update(used_percent=seven_day, resets_at=seven_day_reset)
+    return base
+
+
+def exhausted_services(**overrides):
+    """Claude and codex over their 5h thresholds, cursor healthy."""
+    services = {
+        "claude": windowed_service("claude", 95.0, 10.0),
+        "codex": windowed_service("codex", 91.0, 12.0, five_hour_reset=NOW + 7200),
+        "cursor": cursor_service(),
+    }
+    services.update(overrides)
+    return services
+
+
+class PlanWaitTest(unittest.TestCase):
+    def decide(self, services, config=None):
+        return choose_agent(services, config or base_config(), ALL_INSTALLED)
+
+    def test_blocked_assessment_carries_reset_time(self):
+        decision = self.decide(exhausted_services())
+        claude = by_agent(decision)["claude"]
+        self.assertFalse(claude.eligible)
+        self.assertEqual(claude.resets_at, NOW + 3600)
+
+    def test_reset_time_is_latest_offending_window(self):
+        # 5h and 7d both over: agent is only usable once BOTH reset.
+        services = exhausted_services(
+            claude=windowed_service("claude", 95.0, 90.0,
+                                    five_hour_reset=NOW + 600,
+                                    seven_day_reset=NOW + 7200))
+        claude = by_agent(self.decide(services))["claude"]
+        self.assertEqual(claude.resets_at, NOW + 7200)
+
+    def test_eligible_agent_has_no_reset_time(self):
+        claude = by_agent(self.decide(all_services()))["claude"]
+        self.assertIsNone(claude.resets_at)
+
+    def test_waits_for_earliest_blocked_agent(self):
+        decision = self.decide(exhausted_services())
+        self.assertEqual(decision.agent, "cursor")  # reserve would be spent
+        plan = plan_wait(decision, base_config(), now=NOW)
+        self.assertIsInstance(plan, WaitPlan)
+        self.assertEqual(plan.waiting_for, "claude")
+        self.assertEqual(plan.resume_at, NOW + 3600)
+
+    def test_no_wait_when_preferred_agent_is_eligible(self):
+        decision = self.decide(all_services())
+        self.assertEqual(decision.agent, "claude")
+        self.assertIsNone(plan_wait(decision, base_config(), now=NOW))
+
+    def test_no_wait_when_disabled_in_config(self):
+        config = base_config()
+        config["wait"]["enabled"] = False
+        decision = self.decide(exhausted_services(), config)
+        self.assertIsNone(plan_wait(decision, config, now=NOW))
+
+    def test_no_wait_when_reset_beyond_max_wait(self):
+        config = base_config()
+        config["wait"]["max_wait_minutes"] = 30
+        decision = self.decide(exhausted_services(), config)
+        self.assertIsNone(plan_wait(decision, config, now=NOW))
+
+    def test_waits_even_when_no_agent_is_available(self):
+        # Reserve blocked too: decision has no agent, but waiting still helps.
+        services = exhausted_services(cursor=cursor_service(used_usd=390.0))
+        decision = self.decide(services)
+        plan = plan_wait(decision, base_config(), now=NOW)
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.waiting_for, "claude")
+
+    def test_no_wait_without_reserve_agents(self):
+        config = base_config()
+        config["reserve"] = []
+        decision = self.decide(exhausted_services(), config)
+        self.assertIsNone(plan_wait(decision, config, now=NOW))
+
+    def test_ignores_agents_blocked_for_other_reasons(self):
+        # Not installed / unknown usage have no resets_at, so nothing to wait for.
+        services = exhausted_services(
+            claude={"ok": False, "error": "boom"},
+            codex=windowed_service("codex", 91.0, 12.0,
+                                   five_hour_reset=None, seven_day_reset=None))
+        decision = choose_agent(services, base_config(),
+                                {"claude": False, "codex": True, "cursor": True})
+        plan = plan_wait(decision, base_config(), now=NOW)
+        self.assertIsNone(plan)
 
 
 if __name__ == "__main__":

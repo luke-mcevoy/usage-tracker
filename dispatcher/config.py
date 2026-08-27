@@ -18,6 +18,15 @@ DEFAULT_CONFIG = {
         "codex": {"max_window_percent": 85},
         "cursor": {"min_remaining_usd": 25.0},
     },
+    # Agents of last resort: only dispatched to when nothing else is usable
+    # and waiting for a rate-limit window reset is not worth it.
+    "reserve": ["cursor"],
+    "wait": {
+        "enabled": True,
+        "max_wait_minutes": 360,
+        "poll_seconds": 120,
+        "grace_minutes": 10,
+    },
     "tracker_url": "http://127.0.0.1:8899/api/usage",
 }
 

@@ -29,8 +29,10 @@ def installed_agents():
     return {name: shutil.which(cmd) is not None for name, cmd in AGENT_COMMANDS.items()}
 
 
-def _fetch_from_tracker(url):
-    with urllib.request.urlopen(url, timeout=TRACKER_TIMEOUT_S) as resp:
+def _fetch_from_tracker(url, force=False):
+    if force:
+        url += ("&" if "?" in url else "?") + "refresh=1"
+    with urllib.request.urlopen(url, timeout=TRACKER_TIMEOUT_S if not force else 30) as resp:
         payload = json.loads(resp.read())
     services = payload.get("services")
     if not isinstance(services, dict):
@@ -38,14 +40,14 @@ def _fetch_from_tracker(url):
     return services
 
 
-def _fetch_from_providers():
+def _fetch_from_providers(force=False):
     from providers import claude, codex, cursor
 
     fetchers = {"claude": claude.fetch, "codex": codex.fetch, "cursor": cursor.fetch}
 
     def run(fetcher):
         try:
-            return fetcher()
+            return fetcher(force=force)
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -54,17 +56,18 @@ def _fetch_from_providers():
         return {name: fut.result() for name, fut in futures.items()}
 
 
-def fetch_usage(config):
+def fetch_usage(config, force=False):
     """Current usage per service, shaped like the tracker's ``services`` dict.
 
     The running tracker server is preferred because it caches and so avoids
     hammering the vendor endpoints; if it is not up we call the providers
-    ourselves.
+    ourselves. ``force`` bypasses caches — used after waiting out a rate-limit
+    window, when cached data would still show the old, exhausted numbers.
     """
     try:
-        return _fetch_from_tracker(config["tracker_url"])
+        return _fetch_from_tracker(config["tracker_url"], force=force)
     except Exception:
-        return _fetch_from_providers()
+        return _fetch_from_providers(force=force)
 
 
 def build_command(agent, prompt, headless):
@@ -73,11 +76,16 @@ def build_command(agent, prompt, headless):
         return [cmd, prompt]
     if agent == "codex":
         # --skip-git-repo-check: codex exec otherwise refuses to run outside a git repo
-        return [cmd, "exec", "--skip-git-repo-check", prompt]
+        # --sandbox workspace-write: exec otherwise defaults to a read-only
+        # sandbox, so headless tasks cannot edit files or commit
+        return [cmd, "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", prompt]
     if agent == "cursor":
         # -f trusts the working directory; headless runs otherwise stop at a trust prompt
         return [cmd, "-f", "-p", prompt]
-    return [cmd, "-p", prompt]
+    # --dangerously-skip-permissions: headless claude cannot answer permission
+    # prompts and ignores project .claude/settings.json allow rules in
+    # untrusted dirs, so every write would be refused (same role as cursor -f)
+    return [cmd, "--dangerously-skip-permissions", "-p", prompt]
 
 
 def journal_preamble():
