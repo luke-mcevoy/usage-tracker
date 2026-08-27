@@ -90,17 +90,20 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(payload).encode()
             self._respond(200, "application/json", body)
         elif parsed.path == "/api/dispatches":
-            records = dispatcher_launch.read_dispatch_log(limit=100)
-            payload = {"records": records, "stats": _dispatch_stats(records)}
+            records, active = dispatcher_launch.read_dispatch_log(limit=100)
+            payload = {"records": records, "active": active,
+                       "stats": _dispatch_stats(records + active),
+                       "server_time": int(time.time())}
             self._respond(200, "application/json", json.dumps(payload).encode())
         elif parsed.path == "/api/history":
             try:
                 days = min(90, max(1, int(parse_qs(parsed.query).get("days", ["14"])[0])))
             except ValueError:
                 days = 14
+            records, active = dispatcher_launch.read_dispatch_log(limit=10000)
             series = history.daily_series(
                 history.read_history(max_age_days=days),
-                dispatcher_launch.read_dispatch_log(limit=10000),
+                records + active,
                 days=days)
             self._respond(200, "application/json", json.dumps({"days": series}).encode())
         elif parsed.path in ("/", "/index.html"):

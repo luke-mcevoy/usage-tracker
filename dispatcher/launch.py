@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 AGENT_COMMANDS = {"claude": "claude", "codex": "codex",
@@ -120,22 +121,8 @@ def append_run_record(agent, task):
         f.write(f"- {stamp} — dispatched to {agent}: {summary}\n")
 
 
-def log_dispatch(agent, reason, task, mode, exit_code=None, forced=False):
-    """Append one routing decision to the analytics log.
-
-    The dashboard reads this file to show dispatch history and per-agent
-    counts. One JSON object per line; failures to write never block a launch.
-    """
-    record = {
-        "ts": int(time.time()),
-        "agent": agent,
-        "reason": reason,
-        "task": " ".join(task.split())[:140],
-        "mode": mode,
-        "exit_code": exit_code,
-        "forced": forced,
-        "cwd": os.getcwd(),
-    }
+def _write_log(record):
+    """Append one JSON object per line. Never block the caller on failure."""
     try:
         os.makedirs(os.path.dirname(DISPATCH_LOG), exist_ok=True)
         with open(DISPATCH_LOG, "a", encoding="utf-8") as f:
@@ -144,21 +131,131 @@ def log_dispatch(agent, reason, task, mode, exit_code=None, forced=False):
         pass
 
 
-def read_dispatch_log(limit=100):
-    """Most recent dispatch records, newest first."""
+def log_dispatch_start(run_id, agent, reason, task, mode, forced, pid):
+    """Note a dispatch launching. Paired with a later ``end`` event by ``run_id``."""
+    _write_log({
+        "event": "start",
+        "run_id": run_id,
+        "ts": int(time.time()),
+        "agent": agent,
+        "reason": reason,
+        "task": " ".join(task.split())[:140],
+        "mode": mode,
+        "forced": forced,
+        "cwd": os.getcwd(),
+        "pid": pid,
+    })
+
+
+def log_dispatch_end(run_id, agent, exit_code, duration_s):
+    """Note a dispatch finishing. Correlated with its start event by ``run_id``."""
+    _write_log({
+        "event": "end",
+        "run_id": run_id,
+        "ts": int(time.time()),
+        "agent": agent,
+        "exit_code": exit_code,
+        "duration_s": round(float(duration_s), 3),
+    })
+
+
+def _pid_alive(pid):
+    """Cheap liveness probe for a locally-owned process."""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Different user owns pid — treat as alive; we should not see this in
+        # practice because dispatches are launched by the current user.
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _load_log_lines():
     try:
         with open(DISPATCH_LOG, encoding="utf-8") as f:
-            lines = f.readlines()
+            return f.readlines()
     except OSError:
         return []
-    records = []
-    for line in lines[-limit:]:
+
+
+def read_dispatch_log(limit=100, now=None):
+    """Load the dispatch log and return ``(records, active)``.
+
+    - ``records`` is the completed / legacy dispatch history newest-first,
+      capped at ``limit`` entries. Each entry has the same shape as before
+      (``ts``, ``agent``, ``reason``, ``task``, ``mode``, ``exit_code``,
+      ``forced``, ``cwd``) with an added ``status`` field: ``finished`` for a
+      normally-ended run, ``interrupted`` for a headless run whose dispatcher
+      crashed, ``closed`` for an interactive run that has since exited, or
+      ``legacy`` for single-line records written before this change.
+    - ``active`` is the list of currently in-flight runs — a start event with
+      no matching end event whose ``pid`` is still alive. Each entry adds
+      ``run_id``, ``pid``, ``started_at``, ``elapsed_s``, and ``repo`` (the
+      basename of the dispatch cwd) on top of the record shape above.
+    """
+    lines = _load_log_lines()
+    starts, ends, legacy = {}, {}, []
+    for line in lines:
         try:
-            records.append(json.loads(line))
+            ev = json.loads(line)
         except json.JSONDecodeError:
             continue
-    records.reverse()
-    return records
+        run_id = ev.get("run_id")
+        kind = ev.get("event")
+        if run_id and kind == "start":
+            starts[run_id] = ev
+        elif run_id and kind == "end":
+            ends[run_id] = ev
+        else:
+            legacy.append(ev)
+
+    now_ts = int(now if now is not None else time.time())
+    records, active = [], []
+    for run_id, start in starts.items():
+        base = {
+            "ts": start.get("ts"),
+            "agent": start.get("agent"),
+            "reason": start.get("reason"),
+            "task": start.get("task"),
+            "mode": start.get("mode"),
+            "forced": start.get("forced", False),
+            "cwd": start.get("cwd"),
+            "run_id": run_id,
+            "pid": start.get("pid"),
+        }
+        end = ends.get(run_id)
+        if end is not None:
+            base["exit_code"] = end.get("exit_code")
+            base["duration_s"] = end.get("duration_s")
+            base["status"] = "finished"
+            base["ts_end"] = end.get("ts")
+            records.append(base)
+            continue
+        if _pid_alive(base["pid"]):
+            base["status"] = "running"
+            base["started_at"] = base["ts"]
+            base["elapsed_s"] = max(0, now_ts - (base["ts"] or now_ts))
+            base["repo"] = os.path.basename(base["cwd"] or "")
+            active.append(base)
+        else:
+            base["exit_code"] = None
+            base["status"] = "closed" if base["mode"] == "interactive" else "interrupted"
+            records.append(base)
+
+    for rec in legacy:
+        entry = dict(rec)
+        entry.setdefault("status", "legacy")
+        records.append(entry)
+
+    records.sort(key=lambda r: r.get("ts") or 0, reverse=True)
+    active.sort(key=lambda r: r.get("ts") or 0, reverse=True)
+    return records[:limit], active
 
 
 def launch(agent, task, headless, use_journal, reason="", forced=False):
@@ -171,14 +268,26 @@ def launch(agent, task, headless, use_journal, reason="", forced=False):
         append_run_record(agent, task)
 
     cmd = build_command(agent, prompt, headless)
+    run_id = uuid.uuid4().hex
     if headless:
         # Close stdin: codex (and possibly others) block waiting for piped
         # input when stdin is not a tty, which would hang scripted callers.
-        code = subprocess.call(cmd, stdin=subprocess.DEVNULL)
-        log_dispatch(agent, reason, task, "headless", exit_code=code, forced=forced)
+        started_at = time.time()
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL)
+        log_dispatch_start(run_id, agent, reason, task, "headless", forced, proc.pid)
+        code = None
+        try:
+            code = proc.wait()
+        finally:
+            # try/finally so a KeyboardInterrupt still closes out the log
+            # entry — otherwise a Ctrl+C would leave a phantom "running" row.
+            log_dispatch_end(run_id, agent, code, time.time() - started_at)
         return code
 
-    # execvp never returns, so the interactive record has no exit code
-    log_dispatch(agent, reason, task, "interactive", forced=forced)
+    # execvp reuses this process (same pid), so the dashboard can still probe
+    # liveness via os.kill(pid, 0); we cannot write an end event from a
+    # replaced image, so interactive runs are treated as "closed" once the
+    # pid dies.
+    log_dispatch_start(run_id, agent, reason, task, "interactive", forced, os.getpid())
     sys.stdout.flush()
     os.execvp(cmd[0], cmd)

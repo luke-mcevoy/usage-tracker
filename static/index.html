@@ -205,6 +205,60 @@
     font-size: 11px; color: var(--muted); border: 1px solid var(--border-strong);
     border-radius: 999px; padding: 1.5px 9px;
   }
+
+  .now-working { margin-bottom: 22px; }
+  .now-working .card { padding: 16px 20px; }
+  .now-working .heading {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .now-working .title {
+    font-size: 13px; font-weight: 650; letter-spacing: -0.005em;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .now-working .title::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.45);
+    animation: pulse 2.4s infinite;
+  }
+  .now-working .idle .title::before {
+    background: var(--faint); animation: none; box-shadow: none;
+  }
+  .now-working .count { color: var(--muted); font-size: 12px; }
+  .now-working table { margin-top: 0; }
+  .now-working th, .now-working td { padding: 7px 10px; }
+  .now-working .repo {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 12.5px; color: var(--text);
+  }
+  .now-working .elapsed {
+    font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap;
+  }
+  .status-tag {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
+    border: 1px solid transparent;
+  }
+  .status-running {
+    color: var(--green); background: rgba(63, 185, 80, 0.10);
+    border-color: rgba(63, 185, 80, 0.35);
+  }
+  .status-running .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
+  }
+  .status-ok {
+    color: var(--green); background: rgba(63, 185, 80, 0.08);
+    border-color: rgba(63, 185, 80, 0.28);
+  }
+  .status-fail {
+    color: var(--red); background: rgba(248, 81, 73, 0.08);
+    border-color: rgba(248, 81, 73, 0.32);
+  }
+  .status-interrupted {
+    color: var(--yellow); background: rgba(210, 153, 34, 0.10);
+    border-color: rgba(210, 153, 34, 0.32);
+  }
 </style>
 </head>
 <body>
@@ -222,6 +276,7 @@
       <button id="refresh">Refresh</button>
     </div>
   </header>
+  <div class="now-working" id="now-working"></div>
   <div class="grid" id="grid">
     <div class="card"><h2>Claude</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Codex</h2><div class="skeleton">loading…</div></div>
@@ -265,6 +320,17 @@ function fmtAgo(epoch) {
   if (s < 5400) return `${Math.round(s / 60)} min ago`;
   if (s < 172800) return `${Math.round(s / 3600)} h ago`;
   return `${Math.round(s / 86400)} d ago`;
+}
+
+function fmtElapsed(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return `${m}m ${String(rs).padStart(2, "0")}s`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  if (h < 24) return `${h}h ${String(rm).padStart(2, "0")}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
 }
 
 function bar(label, pct, resetsAt) {
@@ -333,30 +399,101 @@ function esc(s) {
   return div.innerHTML;
 }
 
+function dispatchResult(r) {
+  if (r.status === "running") {
+    return `<span class="status-tag status-running"><span class="dot"></span>running</span>`;
+  }
+  if (r.status === "interrupted") {
+    return `<span class="status-tag status-interrupted">interrupted</span>`;
+  }
+  // legacy / finished / closed interactive
+  if (r.mode === "interactive") {
+    return `<span class="mode-tag">interactive</span>`;
+  }
+  return r.exit_code === 0
+    ? `<span class="status-tag status-ok">✓ ok</span>`
+    : `<span class="status-tag status-fail">✗ exit ${esc(r.exit_code)}</span>`;
+}
+
+function renderNowWorking(data) {
+  const container = document.getElementById("now-working");
+  const active = (data && data.active) || [];
+  const skew = _serverSkew(data);
+  if (!active.length) {
+    container.innerHTML = `<div class="card idle">
+      <div class="heading">
+        <div class="title">Now working</div>
+        <span class="count">nothing dispatched right now</span>
+      </div></div>`;
+    return;
+  }
+  const rows = active.map(r => {
+    const repo = r.repo || (r.cwd ? r.cwd.split("/").pop() : "—");
+    const startedAt = r.started_at || r.ts || 0;
+    const why = r.forced ? "forced with --agent" : (r.reason || "");
+    return `<tr data-started="${startedAt}">
+      <td>${agentPill(r.agent)}</td>
+      <td><span class="repo">${esc(repo)}</span></td>
+      <td class="task-cell">${esc(r.task)}${why ? `<div class="sub">${esc(why)}</div>` : ""}</td>
+      <td class="elapsed" data-elapsed>${fmtElapsed(_liveElapsed(startedAt, skew))}</td>
+      <td>${dispatchResult(r)}</td>
+    </tr>`;
+  }).join("");
+  container.innerHTML = `<div class="card">
+    <div class="heading">
+      <div class="title">Now working</div>
+      <span class="count">${active.length} in flight</span>
+    </div>
+    <table>
+      <tr><th>agent</th><th>repo</th><th>task</th><th>elapsed</th><th>status</th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
+function _serverSkew(data) {
+  // Server clock minus local clock, in seconds. Used to keep elapsed times
+  // accurate even if the dashboard is loaded on a machine whose clock has
+  // drifted vs. the tracker host (usually the same machine, so ~0).
+  if (!data || typeof data.server_time !== "number") return 0;
+  return data.server_time - Math.floor(Date.now() / 1000);
+}
+
+function _liveElapsed(startedAt, skew) {
+  return Math.floor(Date.now() / 1000) + (skew || 0) - startedAt;
+}
+
+function tickElapsed() {
+  const skew = _serverSkew(lastDispatches);
+  document.querySelectorAll("#now-working tr[data-started]").forEach(row => {
+    const started = Number(row.getAttribute("data-started")) || 0;
+    if (!started) return;
+    const cell = row.querySelector("[data-elapsed]");
+    if (cell) cell.textContent = fmtElapsed(_liveElapsed(started, skew));
+  });
+}
+
 function renderDispatches(data) {
   const records = (data && data.records) || [];
   const stats = (data && data.stats) || {};
   if (!records.length) {
     return `<div class="skeleton">No dispatches yet — run <b>./ai "some task"</b> and routing decisions will show up here.</div>`;
   }
-  const total = records.length;
+  const totalForShare = Object.values(stats).reduce((a, s) => a + s.total, 0) || records.length;
   const shareBar = SERVICES
     .filter(s => stats[s.id])
-    .map(s => `<div style="width:${(stats[s.id].total / total * 100).toFixed(1)}%;background:${s.color}"></div>`)
+    .map(s => `<div style="width:${(stats[s.id].total / totalForShare * 100).toFixed(1)}%;background:${s.color}"></div>`)
     .join("");
   const legend = SERVICES
     .filter(s => stats[s.id])
     .map(s => `<span class="chip"><span class="dot" style="background:${s.color}"></span>${s.name}: ${stats[s.id].total} total · ${stats[s.id].last_24h} in 24h</span>`)
     .join("");
   const rows = records.slice(0, 20).map(r => {
-    const exit = r.mode === "interactive"
-      ? `<span class="mode-tag">interactive</span>`
-      : (r.exit_code === 0 ? `<span class="ok-mark">✓ ok</span>` : `<span class="fail-mark">✗ exit ${esc(r.exit_code)}</span>`);
-    const why = r.forced ? "forced with --agent" : r.reason;
+    const why = r.forced ? "forced with --agent" : (r.reason || "");
     return `<tr>
       <td style="white-space:nowrap" class="num">${fmtAgo(r.ts)}</td>
       <td>${agentPill(r.agent)}</td>
-      <td>${exit}</td>
+      <td>${dispatchResult(r)}</td>
       <td class="task-cell">${esc(r.task)}<div class="sub">${esc(why)}</div></td>
     </tr>`;
   }).join("");
@@ -474,16 +611,28 @@ function render() {
   if (!lastData) return;
   document.getElementById("grid").innerHTML =
     SERVICES.map(s => renderCard(s, lastData.services[s.id])).join("");
+  renderNowWorking(lastDispatches);
   document.getElementById("dispatches").innerHTML = renderDispatches(lastDispatches);
   document.getElementById("history").innerHTML = renderHistory(lastHistory);
   document.getElementById("updated").textContent =
     "updated " + new Date(lastData.fetched_at * 1000).toLocaleTimeString();
 }
 
+async function pollDispatches() {
+  try {
+    const resp = await fetch("/api/dispatches");
+    lastDispatches = await resp.json();
+    renderNowWorking(lastDispatches);
+    document.getElementById("dispatches").innerHTML = renderDispatches(lastDispatches);
+  } catch (_) { /* silent — full load will retry */ }
+}
+
 document.getElementById("refresh").addEventListener("click", () => load(true));
 load(false);
 setInterval(() => load(false), 60000);
 setInterval(render, 30000); // keep countdowns fresh
+setInterval(pollDispatches, 3000); // live "now working" panel
+setInterval(tickElapsed, 1000);   // tick the visible elapsed clock every second
 </script>
 </body>
 </html>
