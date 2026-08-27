@@ -6,14 +6,14 @@ same text into Cursor Settings → Rules → User Rules for Cursor agents.
 
 ---
 
-- A local dashboard tracks remaining quota on my Claude, Codex, and Cursor
+- A local dashboard tracks remaining quota on my Claude, Codex, Gemini, and Cursor
   subscriptions. Live JSON: `GET http://127.0.0.1:8899/api/usage`. If it is
   down, start it with `python3 ~/Develop/Code/usage-tracker/server.py`.
 - The `ai` command (on PATH) routes a coding task to whichever vendor CLI
-  (claude / codex / cursor-agent) has the most quota left:
+  (claude / codex / gemini / cursor-agent) has the most quota left:
   - `ai --status` — per-agent headroom and who would be picked, with reasons
   - `ai -p "task"` — run a task headless on the best agent
-  - `ai --agent claude|codex|cursor -p "task"` — force a specific agent
+  - `ai --agent claude|codex|gemini|cursor -p "task"` — force a specific agent
 - When I ask you to delegate work, or to use "whichever model has quota",
   dispatch through `ai` instead of picking a CLI yourself.
 - Session journal convention: if `SESSION.md` exists in the working directory,

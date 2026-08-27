@@ -15,7 +15,8 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-AGENT_COMMANDS = {"claude": "claude", "codex": "codex", "cursor": "cursor-agent"}
+AGENT_COMMANDS = {"claude": "claude", "codex": "codex",
+                  "gemini": "gemini", "cursor": "cursor-agent"}
 
 JOURNAL_FILENAME = "SESSION.md"
 JOURNAL_HEADING = "# Session journal"
@@ -41,9 +42,10 @@ def _fetch_from_tracker(url, force=False):
 
 
 def _fetch_from_providers(force=False):
-    from providers import claude, codex, cursor
+    from providers import claude, codex, cursor, gemini
 
-    fetchers = {"claude": claude.fetch, "codex": codex.fetch, "cursor": cursor.fetch}
+    fetchers = {"claude": claude.fetch, "codex": codex.fetch,
+                "gemini": gemini.fetch, "cursor": cursor.fetch}
 
     def run(fetcher):
         try:
@@ -82,6 +84,10 @@ def build_command(agent, prompt, headless):
     if agent == "cursor":
         # -f trusts the working directory; headless runs otherwise stop at a trust prompt
         return [cmd, "-f", "-p", prompt]
+    if agent == "gemini":
+        # --skip-trust + yolo approvals: headless gemini cannot answer trust
+        # or tool-approval prompts (same role as the flags above)
+        return [cmd, "--skip-trust", "--approval-mode", "yolo", "-p", prompt]
     # --dangerously-skip-permissions: headless claude cannot answer permission
     # prompts and ignores project .claude/settings.json allow rules in
     # untrusted dirs, so every write would be refused (same role as cursor -f)

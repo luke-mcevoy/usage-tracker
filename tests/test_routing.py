@@ -85,7 +85,7 @@ class ChooseAgentTest(unittest.TestCase):
     def test_assessments_cover_every_priority_agent_in_order(self):
         decision = choose_agent(all_services(), base_config(), {"claude": True})
         self.assertEqual([a.agent for a in decision.assessments],
-                         ["claude", "codex", "cursor"])
+                         ["claude", "codex", "gemini", "cursor"])
 
     def test_uninstalled_agents_are_assessed_as_not_installed(self):
         decision = choose_agent(all_services(), base_config(), {"claude": True})
@@ -248,7 +248,7 @@ class ChooseAgentTest(unittest.TestCase):
         decision = choose_agent(all_services(), base_config(), {})
         self.assertIsNone(decision.agent)
         self.assertEqual(decision.reason, "no supported agent CLIs installed")
-        self.assertEqual(len(decision.assessments), 3)
+        self.assertEqual(len(decision.assessments), 4)
         self.assertTrue(all(not a.eligible for a in decision.assessments))
 
     def test_all_installed_flags_false(self):
@@ -262,7 +262,7 @@ class ChooseAgentTest(unittest.TestCase):
         decision = choose_agent(services, base_config(), ALL_INSTALLED, override="cursor")
         self.assertEqual(decision.agent, "cursor")
         self.assertEqual(decision.reason, "manual override via --agent")
-        self.assertEqual(len(decision.assessments), 3)
+        self.assertEqual(len(decision.assessments), 4)
 
     def test_override_wins_over_priority_and_thresholds(self):
         decision = choose_agent(all_services(), base_config(), ALL_INSTALLED, override="codex")
@@ -274,15 +274,37 @@ class ChooseAgentTest(unittest.TestCase):
         self.assertIsNone(decision.agent)
         self.assertIn("cursor", decision.reason)
         self.assertIn("not installed", decision.reason)
-        self.assertEqual(len(decision.assessments), 3)
+        self.assertEqual(len(decision.assessments), 4)
 
-    def test_custom_priority_order(self):
+    def test_custom_priority_order_still_defers_reserve(self):
+        # cursor is first in priority but is a reserve agent, so the first
+        # eligible non-reserve agent (codex) wins.
         config = base_config()
         config["priority"] = ["cursor", "codex", "claude"]
         decision = choose_agent(all_services(), config, ALL_INSTALLED)
-        self.assertEqual(decision.agent, "cursor")
+        self.assertEqual(decision.agent, "codex")
         self.assertEqual([a.agent for a in decision.assessments],
                          ["cursor", "codex", "claude"])
+
+    def test_custom_priority_order_wins_without_reserve(self):
+        config = base_config()
+        config["priority"] = ["cursor", "codex", "claude"]
+        config["reserve"] = []
+        decision = choose_agent(all_services(), config, ALL_INSTALLED)
+        self.assertEqual(decision.agent, "cursor")
+
+    def test_unknown_usage_non_reserve_beats_eligible_reserve(self):
+        # gemini's usage cannot be read, but trying it is still better than
+        # spending cursor credits.
+        services = all_services(
+            claude=windowed_service("claude", 95.0, 10.0),
+            codex=windowed_service("codex", 91.0, 12.0),
+            gemini={"ok": False, "error": "boom"},
+        )
+        installed = dict(ALL_INSTALLED, gemini=True)
+        decision = choose_agent(services, base_config(), installed)
+        self.assertEqual(decision.agent, "gemini")
+        self.assertIn("usage unknown", decision.reason)
 
     def test_priority_subset_excludes_other_agents(self):
         config = base_config()

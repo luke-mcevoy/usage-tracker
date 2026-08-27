@@ -105,6 +105,7 @@
   <div class="grid" id="grid">
     <div class="card"><h2>Claude</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Codex</h2><div class="skeleton">loading…</div></div>
+    <div class="card"><h2>Gemini</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Cursor</h2><div class="skeleton">loading…</div></div>
   </div>
   <div class="section-title">Dispatch routing</div>
@@ -115,7 +116,8 @@
 const SERVICES = [
   { id: "claude", name: "Claude", color: "#d97757" },
   { id: "codex",  name: "Codex",  color: "#74aa9c" },
-  { id: "cursor", name: "Cursor", color: "#7aa2f7" },
+  { id: "gemini", name: "Gemini", color: "#4285f4" },
+  { id: "cursor", name: "Cursor", color: "#a78bfa" },
 ];
 
 function fillColor(pct) {
@@ -178,6 +180,9 @@ function renderCard(svc, d) {
     inner = renderWindows(d);
     if (svc.id === "codex" && d.has_credits) {
       inner += `<div class="sub">credits balance: ${d.credits_balance}</div>`;
+    }
+    if (svc.id === "gemini" && d.daily_limit) {
+      inner += `<div class="sub">${d.requests_today} of ~${d.daily_limit} requests today (local estimate)</div>`;
     }
   }
   const plan = d && d.plan ? `<div class="plan">${d.plan}</div>` : `<div class="plan">&nbsp;</div>`;

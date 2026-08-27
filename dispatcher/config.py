@@ -12,10 +12,11 @@ import os
 CONFIG_PATH = os.path.expanduser("~/.config/usage-tracker/dispatcher.json")
 
 DEFAULT_CONFIG = {
-    "priority": ["claude", "codex", "cursor"],
+    "priority": ["claude", "codex", "gemini", "cursor"],
     "thresholds": {
         "claude": {"max_window_percent": 85},
         "codex": {"max_window_percent": 85},
+        "gemini": {"max_window_percent": 85},
         "cursor": {"min_remaining_usd": 25.0},
     },
     # Agents of last resort: only dispatched to when nothing else is usable

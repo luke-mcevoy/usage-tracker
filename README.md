@@ -1,9 +1,10 @@
 # AI Usage Tracker
 
 Local dashboard showing how much usage you have left on your **Claude**,
-**Codex**, and **Cursor** accounts — plus an `ai` command that routes coding
-tasks to whichever account has the most quota. Zero dependencies (Python 3
-stdlib only), everything runs on your machine, and no tokens ever leave it.
+**Codex**, **Gemini**, and **Cursor** accounts — plus an `ai` command that
+routes coding tasks to whichever account has the most quota. Zero dependencies
+(Python 3 stdlib only), everything runs on your machine, and no tokens ever
+leave it.
 
 ![Dashboard: per-account usage bars plus dispatch routing history](docs/screenshot.png)
 
@@ -38,6 +39,7 @@ the Refresh button forces a re-fetch.
 |---------|-------------|-----------|
 | Claude  | Statusline hook snapshot (`~/.claude/usage-snapshot.json`), with the OAuth usage endpoint as backup | Live while you use Claude Code |
 | Codex   | `codex app-server` JSON-RPC (`account/rateLimits/read`) | Live |
+| Gemini  | Prompt count from local session logs vs the documented daily limit | Local estimate |
 | Cursor  | Access token from Cursor's local state DB → dashboard API | Live |
 
 ### Claude details
@@ -65,6 +67,17 @@ its auth, re-login in Cursor and the token refreshes automatically.
 Spawns `codex app-server` and asks over JSON-RPC. Requires the `codex` CLI to
 be logged in (`codex login`).
 
+### Gemini details
+
+Google only exposes a quota API for Google-account login, and this machine
+uses API-key auth — so the card is an **estimate**: prompts logged today in
+`~/.gemini/tmp/*/logs.json` against the documented daily limit (250/day for
+the free API-key tier, 1,000+/day for Google login). Real API-call counts run
+somewhat higher than prompt counts. Set `GEMINI_DAILY_LIMIT` if on a paid
+tier. Switching the CLI back to Google login (`/auth` inside `gemini`) both
+raises the daily limit and would allow real quota data via the Code Assist
+API — a good future upgrade.
+
 ## Caveats
 
 - All three data sources are unofficial/undocumented and may break when
@@ -76,7 +89,7 @@ be logged in (`codex login`).
 
 `./ai` hands a coding task to whichever vendor CLI still has quota left. It
 reads the same usage data as the dashboard, picks an agent, and execs that
-vendor's CLI (`claude`, `codex`, or `cursor-agent`) with your task.
+vendor's CLI (`claude`, `codex`, `gemini`, or `cursor-agent`) with your task.
 
 ```bash
 ./ai                                  # status only: who is eligible, who would win
@@ -117,7 +130,13 @@ not be read, or if it is over its threshold:
 |--------|----------------|
 | Claude | worst rate-limit window is under `max_window_percent` used |
 | Codex  | worst rate-limit window is under `max_window_percent` used |
+| Gemini | estimated daily requests under `max_window_percent` used |
 | Cursor | at least `min_remaining_usd` left in the billing cycle |
+
+Reserve agents (`cursor` by default) are always considered last: any eligible
+non-reserve agent — even one whose usage could not be read — wins over an
+eligible reserve agent, because reserve credits do not refill on a rolling
+window.
 
 `ai --status` prints the full assessment — every agent, its headroom, and why
 it is eligible or blocked — so you can always see what step 3 would do before

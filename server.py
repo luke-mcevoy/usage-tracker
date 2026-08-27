@@ -14,14 +14,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from dispatcher import launch as dispatcher_launch
-from providers import claude, codex, cursor
+from providers import claude, codex, cursor, gemini
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("USAGE_TRACKER_PORT", "8899"))
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
-PROVIDERS = {"claude": claude.fetch, "codex": codex.fetch, "cursor": cursor.fetch}
-CACHE_TTL_S = {"claude": 60, "codex": 120, "cursor": 120}
+PROVIDERS = {"claude": claude.fetch, "codex": codex.fetch,
+             "gemini": gemini.fetch, "cursor": cursor.fetch}
+CACHE_TTL_S = {"claude": 60, "codex": 120, "gemini": 60, "cursor": 120}
 
 _cache = {}
 _cache_lock = threading.Lock()

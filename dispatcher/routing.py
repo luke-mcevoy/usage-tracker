@@ -119,11 +119,18 @@ def _assess(agent, services, config, installed):
 
 
 def choose_agent(services, config, installed, override=None):
-    """Pick the agent with the most quota headroom that is within its limits."""
+    """Pick the agent with the most quota headroom that is within its limits.
+
+    Reserve agents (config["reserve"], e.g. cursor) are considered last: any
+    eligible non-reserve agent — even one whose usage could not be read —
+    beats an eligible reserve agent, because reserve credits do not refill on
+    a rolling window.
+    """
     services = services or {}
     installed = installed or {}
-    priority = list((config or {}).get("priority") or DEFAULT_PRIORITY)
-    assessments = [_assess(agent, services, config or {}, installed) for agent in priority]
+    config = config or {}
+    priority = list(config.get("priority") or DEFAULT_PRIORITY)
+    assessments = [_assess(agent, services, config, installed) for agent in priority]
 
     if override:
         if installed.get(override):
@@ -134,21 +141,25 @@ def choose_agent(services, config, installed, override=None):
             f"but the {override} CLI is not installed",
             assessments)
 
-    for assessment in assessments:
-        if assessment.eligible and assessment.headroom is not None:
-            return Decision(
-                assessment.agent,
-                f"{assessment.agent} is the highest-priority agent within limits "
-                f"({assessment.reason})",
-                assessments)
+    reserve = set(config.get("reserve") or [])
+    non_reserve = [a for a in assessments if a.agent not in reserve]
+    reserve_group = [a for a in assessments if a.agent in reserve]
 
-    for assessment in assessments:
-        if assessment.eligible:
-            return Decision(
-                assessment.agent,
-                f"{assessment.agent} is the highest-priority available agent "
-                f"({assessment.reason})",
-                assessments)
+    for group in (non_reserve, reserve_group):
+        for assessment in group:
+            if assessment.eligible and assessment.headroom is not None:
+                return Decision(
+                    assessment.agent,
+                    f"{assessment.agent} is the highest-priority agent within limits "
+                    f"({assessment.reason})",
+                    assessments)
+        for assessment in group:
+            if assessment.eligible:
+                return Decision(
+                    assessment.agent,
+                    f"{assessment.agent} is the highest-priority available agent "
+                    f"({assessment.reason})",
+                    assessments)
 
     known = [a for a in assessments if a.headroom is not None]
     if known:
