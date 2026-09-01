@@ -7,7 +7,7 @@ dispatches coding tasks; an OpenAI-compatible gateway
 (`POST /v1/chat/completions`) does the same for chat. Python 3 stdlib only.
 Nothing leaves the machine except to the vendor you already pay.
 
-![Dashboard: remaining quota, live routing decision, efficiency, and memory](docs/screenshot.png)
+![Dashboard: remaining quota, live routing decision, efficiency, and memory](docs/dashboard.png)
 
 The page is the demo. From the top: remaining windows and Cursor dollars;
 a sentence for the next route plus every agent's eligibility; efficiency
