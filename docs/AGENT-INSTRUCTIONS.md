@@ -16,6 +16,9 @@ same text into Cursor Settings → Rules → User Rules for Cursor agents.
   - `ai --agent claude|codex|gemini|cursor -p "task"` — force a specific agent
 - When I ask you to delegate work, or to use "whichever model has quota",
   dispatch through `ai` instead of picking a CLI yourself.
+- OpenAI-compatible local gateway (same quota router, for chat rather than
+  coding CLIs): `POST http://127.0.0.1:8899/v1/chat/completions` with
+  `"model": "auto"`. Point SDKs at `http://127.0.0.1:8899/v1`.
 - Session journal convention: if `SESSION.md` exists in the working directory,
   read it before starting — it holds handoff notes from previous AI sessions,
   possibly written by other models. After completing significant work, append

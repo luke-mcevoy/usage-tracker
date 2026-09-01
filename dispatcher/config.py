@@ -29,6 +29,23 @@ DEFAULT_CONFIG = {
         "grace_minutes": 10,
     },
     "tracker_url": "http://127.0.0.1:8899/api/usage",
+    # HTTP chat-completions gateway (OpenAI-compatible). A backend is a
+    # config dict, not a new module: kind gemini | openai. ``quota`` names
+    # the usage-tracker service whose remaining window/dollars gate this
+    # backend. Omit quota for pay-as-you-go APIs (tried last).
+    "gateway": {
+        "enabled": True,
+        "backends": [
+            {
+                "id": "gemini",
+                "kind": "gemini",
+                "quota": "gemini",
+                "model": "gemini-3.6-flash",
+                "api_key_env": "GEMINI_API_KEY",
+                "api_key_keychain": "gemini-cli-api-key",
+            },
+        ],
+    },
 }
 
 

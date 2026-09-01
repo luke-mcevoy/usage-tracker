@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from dispatcher import launch as launcher
 from dispatcher.config import load_config
 from dispatcher.routing import choose_agent, plan_wait
+from insight import apply_memory
 
 USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -180,6 +181,9 @@ def main(argv=None):
     services = launcher.fetch_usage(config)
     installed = launcher.installed_agents()
     decision = choose_agent(services, config, installed, override=args.agent)
+    if args.agent is None:
+        records, _ = launcher.read_dispatch_log(limit=5000)
+        decision = apply_memory(decision, task, records, config)
 
     if args.status or not task:
         print_status(services, decision)
@@ -193,6 +197,8 @@ def main(argv=None):
                 print("still rate-limited after the window reset; rerun with --now "
                       "to spend reserve credits anyway", file=sys.stderr)
                 return 1
+            records, _ = launcher.read_dispatch_log(limit=5000)
+            decision = apply_memory(decision, task, records, config)
 
     if decision.agent is None:
         print(f"no agent available: {decision.reason}", file=sys.stderr)
