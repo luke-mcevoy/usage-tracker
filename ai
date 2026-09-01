@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from dispatcher import launch as launcher
 from dispatcher.config import load_config
 from dispatcher.routing import choose_agent, plan_wait
+from insight import apply_memory
 
 USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -72,6 +73,8 @@ def parse_args(argv):
     parser.add_argument("task", nargs="*", help="the task to hand to the agent")
     parser.add_argument("--status", action="store_true",
                         help="show agent status and the routing decision, then exit")
+    parser.add_argument("--ps", action="store_true",
+                        help="list dispatches currently in flight and exit")
     parser.add_argument("-p", "--print", dest="headless", action="store_true",
                         help="headless mode: run the task non-interactively and print the result")
     parser.add_argument("--agent", choices=sorted(launcher.AGENT_COMMANDS),
@@ -83,6 +86,39 @@ def parse_args(argv):
                              "(e.g. cursor) credits instead of waiting for a "
                              "rate-limit window to reset")
     return parser.parse_args(argv)
+
+
+def fmt_elapsed(seconds):
+    s = int(max(0, seconds))
+    if s < 60:
+        return f"{s}s"
+    m, rs = divmod(s, 60)
+    if m < 60:
+        return f"{m}m {rs:02d}s"
+    h, rm = divmod(m, 60)
+    if h < 24:
+        return f"{h}h {rm:02d}m"
+    d, rh = divmod(h, 24)
+    return f"{d}d {rh:02d}h"
+
+
+def print_active():
+    _, active = launcher.read_dispatch_log(limit=1000)
+    if not active:
+        print("no dispatches in flight")
+        return 0
+    print(bold("in flight:"))
+    for row in active:
+        agent = row.get("agent", "?")
+        repo = row.get("repo") or "-"
+        elapsed = fmt_elapsed(row.get("elapsed_s") or 0)
+        task = row.get("task") or ""
+        pid = row.get("pid") or "?"
+        mode = row.get("mode") or "?"
+        print(f"  {agent:<7} {repo:<20} {elapsed:>10}  {dim(f'pid {pid} · {mode}')}")
+        if task:
+            print(f"          {dim(task)}")
+    return 0
 
 
 def sleep_until(resume_at):
@@ -138,10 +174,16 @@ def main(argv=None):
     args = parse_args(argv)
     task = " ".join(args.task).strip()
 
+    if args.ps:
+        return print_active()
+
     config = load_config()
     services = launcher.fetch_usage(config)
     installed = launcher.installed_agents()
     decision = choose_agent(services, config, installed, override=args.agent)
+    if args.agent is None:
+        records, _ = launcher.read_dispatch_log(limit=5000)
+        decision = apply_memory(decision, task, records, config)
 
     if args.status or not task:
         print_status(services, decision)
@@ -155,6 +197,8 @@ def main(argv=None):
                 print("still rate-limited after the window reset; rerun with --now "
                       "to spend reserve credits anyway", file=sys.stderr)
                 return 1
+            records, _ = launcher.read_dispatch_log(limit=5000)
+            decision = apply_memory(decision, task, records, config)
 
     if decision.agent is None:
         print(f"no agent available: {decision.reason}", file=sys.stderr)

@@ -1,12 +1,24 @@
-# AI Usage Tracker
+# Usage
 
-Local dashboard showing how much usage you have left on your **Claude**,
-**Codex**, **Gemini**, and **Cursor** accounts — plus an `ai` command that
-routes coding tasks to whichever account has the most quota. Zero dependencies
-(Python 3 stdlib only), everything runs on your machine, and no tokens ever
-leave it.
+A local router for the AI subscriptions you already pay for — Claude, Codex,
+Gemini, and Cursor. The dashboard shows remaining quota, who would take the
+next task and why, and whether routing is actually working. An `ai` command
+dispatches coding tasks; an OpenAI-compatible gateway
+(`POST /v1/chat/completions`) does the same for chat. Python 3 stdlib only.
+Nothing leaves the machine except to the vendor you already pay.
 
-![Dashboard: per-account usage bars plus dispatch routing history](docs/screenshot.png)
+![Dashboard: remaining quota, live routing decision, efficiency, and memory](docs/screenshot.png)
+
+The page is the demo. From the top: remaining windows and Cursor dollars;
+a sentence for the next route plus every agent's eligibility; efficiency
+(success rate, forced overrides, spend today); memory (which agent finishes
+which kind of task); then spend-by-day and the recent dispatch log.
+
+```bash
+python3 server.py          # http://127.0.0.1:8899
+./ai --status              # same decision in the terminal
+./ai "fix the flaky test"  # dispatch to whoever still has quota
+```
 
 ```text
 $ ./ai --status
@@ -17,6 +29,9 @@ usage-tracker dispatcher
 
   codex    plus     eligible  headroom 100.0%
            5h window at 0% used
+
+  gemini   api key  eligible  headroom 100.0%
+           daily requests (est.) at 0% used
 
   cursor   ultra    eligible  headroom  99.7%
            $388.70 remaining (0.32% used)
@@ -31,7 +46,8 @@ python3 server.py
 ```
 
 Then open <http://127.0.0.1:8899>. The page auto-refreshes every minute;
-the Refresh button forces a re-fetch.
+the Refresh button forces a re-fetch. JSON for the figures above:
+`GET /api/usage`, `GET /api/insight`, `GET /api/history`.
 
 ## How each service is read
 
@@ -246,3 +262,66 @@ handoff journal in **the directory you run it from** (not in this repo):
 
 So the next session — whichever model gets it — starts by reading what the
 previous one did. Use `--no-journal` to opt out for a single run.
+
+## Local OpenRouter (HTTP gateway)
+
+The same quota router also speaks OpenAI's chat-completions API, so any tool
+that can point at a custom base URL (OpenAI SDK, Continue, Aider, curl,
+Cursor's OpenAI-compatible override) can spend *your already-paid
+subscriptions* instead of a third-party aggregator.
+
+This is not a LiteLLM/OpenRouter clone. Those route **API keys by price**.
+This routes **personal subscriptions by remaining quota**, on your machine,
+and never sends tokens anywhere except the vendor you already pay.
+
+```bash
+# list models (always includes `auto`)
+curl -s http://127.0.0.1:8899/v1/models | python3 -m json.tool
+
+# route by remaining quota
+curl -s http://127.0.0.1:8899/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"auto","messages":[{"role":"user","content":"ping"}]}'
+```
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8899/v1", api_key="local")
+print(client.chat.completions.create(
+    model="auto",
+    messages=[{"role": "user", "content": "ping"}],
+).choices[0].message.content)
+```
+
+`model` values:
+
+| model | meaning |
+|-------|---------|
+| `auto` | quota router, then fallback on 429/5xx |
+| `gemini` | pin that backend |
+| `gemini/gemini-2.0-flash` | pin backend and override the model id |
+
+Coding CLIs stay on `./ai`. Chat completions only go to HTTP backends.
+Gemini ships as the default (API key from `GEMINI_API_KEY` or the
+`gemini-cli-api-key` Keychain item the Gemini CLI already stored). Add any
+OpenAI-compatible endpoint in `~/.config/usage-tracker/dispatcher.json`:
+
+```json
+{
+  "gateway": {
+    "backends": [
+      {"id": "gemini", "kind": "gemini", "quota": "gemini",
+       "model": "gemini-3.6-flash", "api_key_env": "GEMINI_API_KEY",
+       "api_key_keychain": "gemini-cli-api-key"},
+      {"id": "groq", "kind": "openai",
+       "base_url": "https://api.groq.com/openai/v1",
+       "model": "llama-3.3-70b-versatile", "api_key_env": "GROQ_API_KEY"}
+    ]
+  }
+}
+```
+
+A backend with `"quota": "gemini"` is gated by that service's usage window.
+Omit `quota` for pay-as-you-go APIs — they are tried last, after every
+subscription-backed backend. Keys are read from the environment or Keychain
+and never written to logs, history, or API responses.

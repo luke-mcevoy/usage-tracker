@@ -3,135 +3,251 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Usage Tracker</title>
+<title>Usage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0d1117;
-    --card: #161b22;
-    --border: #30363d;
-    --text: #e6edf3;
-    --muted: #8b949e;
-    --green: #3fb950;
-    --yellow: #d29922;
-    --red: #f85149;
-    --track: #21262d;
+    --paper: #f3efe6;
+    --card: #faf8f3;
+    --ink: #1a1917;
+    --muted: #6b6860;
+    --faint: #8a867c;
+    --line: #e4dfd3;
+    --line-strong: #d4cec0;
+    --accent: #c45c3e;
+    --sage: #3d6b4f;
+    --gold: #9a7428;
+    --rose: #a33b32;
+    --track: #ece7db;
+    --claude: #c45c3e;
+    --codex: #3d6b5a;
+    --gemini: #4a6fa5;
+    --cursor: #5c5270;
   }
   * { box-sizing: border-box; margin: 0; }
+  html { scrollbar-color: var(--line-strong) var(--paper); }
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Sans 3", "Segoe UI", sans-serif;
     min-height: 100vh;
-    padding: 32px 20px;
+    padding: 48px 28px 80px;
+    -webkit-font-smoothing: antialiased;
   }
   .wrap { max-width: 1080px; margin: 0 auto; }
+
   header {
-    display: flex; align-items: baseline; justify-content: space-between;
-    margin-bottom: 24px; flex-wrap: wrap; gap: 8px;
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 40px; flex-wrap: wrap; gap: 16px;
+    border-bottom: 1px solid var(--line); padding-bottom: 28px;
   }
-  h1 { font-size: 22px; font-weight: 600; }
+  h1 {
+    font-family: Newsreader, Georgia, serif;
+    font-size: 42px; font-weight: 500; letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .tagline {
+    color: var(--muted); font-size: 15px; margin-top: 10px;
+    max-width: 36em; line-height: 1.45;
+  }
   .meta { color: var(--muted); font-size: 13px; display: flex; gap: 14px; align-items: center; }
   button {
-    background: var(--card); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 5px 14px; font-size: 13px; cursor: pointer;
+    background: transparent; color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px; padding: 6px 14px; font-size: 13px;
+    font-family: inherit; cursor: pointer;
   }
-  button:hover { border-color: var(--muted); }
+  button:hover { border-color: var(--ink); }
+  button:disabled { opacity: 0.45; cursor: default; }
+
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
   }
   .card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 20px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 2px; padding: 22px 22px 18px;
   }
   .card h2 {
-    font-size: 16px; font-weight: 600;
+    font-size: 15px; font-weight: 600;
     display: flex; align-items: center; gap: 8px; margin-bottom: 2px;
   }
-  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
   .plan {
-    color: var(--muted); font-size: 12px; text-transform: uppercase;
-    letter-spacing: 0.5px; margin-bottom: 14px;
+    color: var(--faint); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.12em; font-weight: 600; margin-bottom: 16px;
   }
   .bar-row { margin-bottom: 14px; }
   .bar-head {
-    display: flex; justify-content: space-between;
+    display: flex; justify-content: space-between; align-items: baseline;
     font-size: 13px; margin-bottom: 5px;
   }
-  .bar-head .pct { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .track { background: var(--track); border-radius: 5px; height: 9px; overflow: hidden; }
-  .fill { height: 100%; border-radius: 5px; transition: width .4s ease; min-width: 2px; }
-  .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
-  .bigstat { font-size: 26px; font-weight: 700; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
-  .bigstat span { font-size: 14px; color: var(--muted); font-weight: 400; }
-  .footer-note { color: var(--muted); font-size: 12px; margin-top: 12px; }
-  .error { color: var(--red); font-size: 13px; line-height: 1.5; }
-  .skeleton { color: var(--muted); font-size: 13px; }
-  .section-title { font-size: 16px; font-weight: 600; margin: 28px 0 12px; }
+  .bar-head .pct { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12.5px; }
+  .track { background: var(--track); height: 3px; overflow: hidden; }
+  .fill { height: 100%; min-width: 2px; transition: width .4s ease; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-top: 5px; line-height: 1.4; }
+  .bigstat {
+    font-family: Newsreader, Georgia, serif;
+    font-size: 34px; font-weight: 500; margin: 4px 0 2px;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.03em;
+  }
+  .bigstat span { font-family: "Source Sans 3", sans-serif; font-size: 14px; color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  .footer-note {
+    color: var(--faint); font-size: 12px; margin-top: 14px;
+    padding-top: 12px; border-top: 1px solid var(--line);
+    line-height: 1.45;
+  }
+  .error { color: var(--rose); font-size: 13px; line-height: 1.5; }
+  .skeleton { color: var(--muted); font-size: 14px; }
+
+  .kicker {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--faint);
+    margin: 40px 0 14px;
+  }
+
+  .lede {
+    font-family: Newsreader, Georgia, serif;
+    font-size: 26px; font-weight: 400; letter-spacing: -0.02em;
+    line-height: 1.3; margin-bottom: 18px;
+  }
+  .lede em { font-style: italic; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+
+  .stat-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-row .n { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .route-row {
+    display: grid; grid-template-columns: 88px 88px 1fr;
+    gap: 10px; align-items: baseline;
+    padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px;
+  }
+  .route-row:last-child { border-bottom: none; }
+  .route-row.next { background: #f1ebe0; margin: 0 -22px; padding: 9px 22px; }
+  .flag { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; }
+  .flag.on { color: var(--sage); }
+  .flag.off { color: var(--rose); }
+  .flag.hold { color: var(--gold); }
+
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+  .chart-title {
+    font-size: 12px; color: var(--faint); margin-bottom: 10px;
+    text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600;
+  }
+  .chart svg { width: 100%; height: 160px; display: block; }
+  .chart .axis { font-size: 10px; fill: var(--faint); }
+  .chart .val { font-size: 10.5px; fill: var(--ink); font-weight: 600; }
+  .chart .gridline { stroke: var(--line); stroke-width: 1; }
+
   .share-track {
-    display: flex; height: 12px; border-radius: 6px; overflow: hidden;
-    background: var(--track); margin-bottom: 8px;
+    display: flex; height: 3px; overflow: hidden;
+    background: var(--track); margin-bottom: 14px;
   }
   .share-track div { height: 100%; }
-  .legend { display: flex; gap: 18px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-  .legend .dot { width: 8px; height: 8px; margin-right: 5px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 14px; }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .legend .dot { width: 7px; height: 7px; margin-right: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 14px; }
   th {
-    text-align: left; color: var(--muted); font-weight: 500; font-size: 12px;
-    padding: 6px 10px; border-bottom: 1px solid var(--border);
+    text-align: left; color: var(--faint); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line-strong);
   }
-  td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td { padding: 10px 8px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
   tr:last-child td { border-bottom: none; }
-  .task-cell { color: var(--muted); max-width: 480px; }
-  .ok-mark { color: var(--green); }
-  .fail-mark { color: var(--red); }
-  .agent-cell { white-space: nowrap; font-weight: 600; }
-  .mode-tag {
-    font-size: 11px; color: var(--muted); border: 1px solid var(--border);
-    border-radius: 4px; padding: 1px 6px;
+  .task-cell { color: var(--muted); max-width: 480px; line-height: 1.45; }
+  .ok-mark { color: var(--sage); font-weight: 600; }
+  .fail-mark { color: var(--rose); font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  .agent-pill { font-weight: 600; font-size: 13px; }
+  .mode-tag { font-size: 12px; color: var(--muted); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+  .now-working { margin-bottom: 22px; }
+  .now-working .heading {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 8px;
   }
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-  @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
-  .chart-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-  .chart svg { width: 100%; height: 150px; display: block; }
-  .chart .axis { font-size: 10px; fill: var(--muted); }
-  .chart .val { font-size: 10px; fill: var(--text); font-weight: 600; }
+  .now-working table { margin-top: 0; }
+  .now-working .repo {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  }
+  .now-working .elapsed { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .status-tag { font-size: 12.5px; font-weight: 600; }
+  .status-running { color: var(--sage); }
+  .status-ok { color: var(--sage); }
+  .status-fail { color: var(--rose); }
+  .status-interrupted { color: var(--gold); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>AI Usage Tracker</h1>
+    <div>
+      <h1>Usage</h1>
+      <div class="tagline">Four subscriptions, one router. Every figure is measured — remaining windows, dollars spent, and which agent actually ran.</div>
+    </div>
     <div class="meta">
       <span id="updated">loading…</span>
       <button id="refresh">Refresh</button>
     </div>
   </header>
+  <div class="now-working" id="now-working"></div>
   <div class="grid" id="grid">
     <div class="card"><h2>Claude</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Codex</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Gemini</h2><div class="skeleton">loading…</div></div>
     <div class="card"><h2>Cursor</h2><div class="skeleton">loading…</div></div>
   </div>
-  <div class="section-title">Daily analytics</div>
+
+  <div class="kicker">Router</div>
+  <div class="card" id="router"><div class="skeleton">loading…</div></div>
+
+  <div class="kicker">How it is going</div>
+  <div class="two">
+    <div class="card" id="efficiency"><div class="skeleton">loading…</div></div>
+    <div class="card" id="memory"><div class="skeleton">loading…</div></div>
+  </div>
+
+  <div class="kicker">By day</div>
   <div class="card" id="history"><div class="skeleton">loading…</div></div>
-  <div class="section-title">Dispatch routing</div>
+  <div class="kicker">Recent routes</div>
   <div class="card" id="dispatches"><div class="skeleton">loading…</div></div>
+  <div class="kicker">Gateway</div>
+  <div class="card">
+    <p style="font-size:15px;line-height:1.55;color:var(--muted)">
+      Chat completions use the same quota rules via
+      <code>POST /v1/chat/completions</code> with <code>model: "auto"</code>.
+      Point an OpenAI client at <code>http://127.0.0.1:8899/v1</code>.
+      Coding tasks still go through <code>ai</code>.
+    </p>
+    <div class="footer-note">Keys stay on this machine. They are sent only to the vendor you already pay.</div>
+  </div>
 </div>
 
 <script>
 const SERVICES = [
-  { id: "claude", name: "Claude", color: "#d97757" },
-  { id: "codex",  name: "Codex",  color: "#74aa9c" },
-  { id: "gemini", name: "Gemini", color: "#4285f4" },
-  { id: "cursor", name: "Cursor", color: "#a78bfa" },
+  { id: "claude", name: "Claude", color: "var(--claude)" },
+  { id: "codex",  name: "Codex",  color: "var(--codex)" },
+  { id: "gemini", name: "Gemini", color: "var(--gemini)" },
+  { id: "cursor", name: "Cursor", color: "var(--cursor)" },
 ];
 
 function fillColor(pct) {
-  if (pct >= 90) return "var(--red)";
-  if (pct >= 70) return "var(--yellow)";
-  return "var(--green)";
+  if (pct >= 90) return "var(--rose)";
+  if (pct >= 70) return "var(--gold)";
+  return "var(--sage)";
 }
 
 function fmtReset(epoch) {
@@ -153,6 +269,17 @@ function fmtAgo(epoch) {
   return `${Math.round(s / 86400)} d ago`;
 }
 
+function fmtElapsed(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return `${m}m ${String(rs).padStart(2, "0")}s`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  if (h < 24) return `${h}h ${String(rm).padStart(2, "0")}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
 function bar(label, pct, resetsAt) {
   const clamped = Math.min(100, Math.max(0, pct));
   return `<div class="bar-row">
@@ -170,7 +297,7 @@ function renderWindows(d) {
 function renderCursor(d) {
   const money = (v) => "$" + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
   let html = `<div class="bigstat">${money(d.remaining_usd)} <span>left of ${money(d.limit_usd)}</span></div>
-    <div class="sub" style="margin-bottom:12px">${money(d.used_usd)} used this cycle</div>`;
+    <div class="sub" style="margin-bottom:14px">${money(d.used_usd)} used this cycle</div>`;
   html += bar("Included usage", d.percent_used, d.cycle_end);
   if (d.on_demand) {
     html += `<div class="sub">On-demand: ${money(d.on_demand.used_usd)} used${d.on_demand.limit_usd ? " of " + money(d.on_demand.limit_usd) : ""}</div>`;
@@ -207,50 +334,166 @@ function agentColor(agent) {
   return svc ? svc.color : "var(--muted)";
 }
 
+function agentPill(agent) {
+  return `<span class="agent-pill" style="color:${agentColor(agent)}">${esc(agent)}</span>`;
+}
+
 function esc(s) {
   const div = document.createElement("div");
   div.textContent = s == null ? "" : String(s);
   return div.innerHTML;
 }
 
+function dispatchResult(r) {
+  if (r.status === "running") return `<span class="status-tag status-running">running</span>`;
+  if (r.status === "interrupted") return `<span class="status-tag status-interrupted">interrupted</span>`;
+  if (r.mode === "interactive") return `<span class="mode-tag">interactive</span>`;
+  return r.exit_code === 0
+    ? `<span class="status-tag status-ok">ok</span>`
+    : `<span class="status-tag status-fail">exit ${esc(r.exit_code)}</span>`;
+}
+
+function renderNowWorking(data) {
+  const container = document.getElementById("now-working");
+  const active = (data && data.active) || [];
+  const skew = _serverSkew(data);
+  if (!active.length) {
+    container.innerHTML = "";
+    return;
+  }
+  const rows = active.map(r => {
+    const repo = r.repo || (r.cwd ? r.cwd.split("/").pop() : "—");
+    const startedAt = r.started_at || r.ts || 0;
+    const why = r.forced ? "forced with --agent" : (r.reason || "");
+    return `<tr data-started="${startedAt}">
+      <td>${agentPill(r.agent)}</td>
+      <td><span class="repo">${esc(repo)}</span></td>
+      <td class="task-cell">${esc(r.task)}${why ? `<div class="sub">${esc(why)}</div>` : ""}</td>
+      <td class="elapsed" data-elapsed>${fmtElapsed(_liveElapsed(startedAt, skew))}</td>
+      <td>${dispatchResult(r)}</td>
+    </tr>`;
+  }).join("");
+  container.innerHTML = `<div class="card">
+    <div class="heading">
+      <div class="kicker" style="margin:0">In flight</div>
+      <span class="sub">${active.length}</span>
+    </div>
+    <table>
+      <tr><th>agent</th><th>repo</th><th>task</th><th>elapsed</th><th>status</th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
+function _serverSkew(data) {
+  if (!data || typeof data.server_time !== "number") return 0;
+  return data.server_time - Math.floor(Date.now() / 1000);
+}
+
+function _liveElapsed(startedAt, skew) {
+  return Math.floor(Date.now() / 1000) + (skew || 0) - startedAt;
+}
+
+function tickElapsed() {
+  const skew = _serverSkew(lastDispatches);
+  document.querySelectorAll("#now-working tr[data-started]").forEach(row => {
+    const started = Number(row.getAttribute("data-started")) || 0;
+    if (!started) return;
+    const cell = row.querySelector("[data-elapsed]");
+    if (cell) cell.textContent = fmtElapsed(_liveElapsed(started, skew));
+  });
+}
+
+function renderRouter(insight) {
+  const routing = insight && insight.routing;
+  if (!routing) return `<div class="skeleton">no routing snapshot</div>`;
+  const name = routing.agent
+    ? SERVICES.find(s => s.id === routing.agent)?.name || routing.agent
+    : "no one";
+  const lede = routing.agent
+    ? `The next coding task would go to <em>${esc(name)}</em>.`
+    : `Nothing is eligible to take the next task.`;
+  const rows = (routing.assessments || []).map(a => {
+    const isNext = a.agent === routing.agent;
+    let flag = a.eligible ? `<span class="flag on">open</span>` : `<span class="flag off">blocked</span>`;
+    if (a.reserve && a.eligible) flag = `<span class="flag hold">reserve</span>`;
+    return `<div class="route-row${isNext ? " next" : ""}">
+      <div>${agentPill(a.agent)}</div>
+      <div>${flag}</div>
+      <div class="sub" style="margin:0">${esc(a.reason)}</div>
+    </div>`;
+  }).join("");
+  return `<div class="lede">${lede}</div>
+    <div class="sub" style="margin-bottom:16px">${esc(routing.reason)}</div>
+    ${rows}
+    <div class="footer-note">Priority is Claude, then Codex, then Gemini. Cursor is last on purpose — its credits do not refill every five hours. A task kind that one agent consistently finishes can override priority, but never eligibility.</div>`;
+}
+
+function renderEfficiency(insight) {
+  const e = insight && insight.efficiency;
+  if (!e) return `<div class="skeleton">no data</div>`;
+  const success = e.success_pct == null ? "—" : e.success_pct + "%";
+  const money = (v) => "$" + Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return `<div class="lede" style="font-size:22px">Efficiency</div>
+    <div class="stat-row"><span>Headless success</span><span class="n">${success}</span></div>
+    <div class="stat-row"><span>Forced with --agent</span><span class="n">${e.forced} of ${e.total}</span></div>
+    <div class="stat-row"><span>Failed or interrupted</span><span class="n">${e.failed}</span></div>
+    <div class="stat-row"><span>Cursor dispatches</span><span class="n">${e.cursor_dispatches}</span></div>
+    <div class="stat-row"><span>Cursor spend today</span><span class="n">${money(e.cursor_spend_today)}</span></div>
+    <div class="footer-note">Success is exit code 0 on headless and gateway runs. Interactive sessions have no scored outcome. Forced runs bypass the router entirely.</div>`;
+}
+
+function renderMemory(insight) {
+  const rows = (insight && insight.memory) || [];
+  if (!rows.length) {
+    return `<div class="lede" style="font-size:22px">Memory</div>
+      <div class="skeleton">No scored outcomes yet — memory is built from finished headless runs.</div>`;
+  }
+  const body = rows.slice(0, 12).map(r =>
+    `<div class="stat-row">
+      <span>${esc(r.kind)} · ${esc(r.agent)}</span>
+      <span class="n">${r.ok}/${r.n} <span style="color:var(--faint);font-weight:400">${r.rate}%</span></span>
+    </div>`
+  ).join("");
+  return `<div class="lede" style="font-size:22px">Memory</div>
+    ${body}
+    <div class="footer-note">Keyword kinds from the task text. If Codex finishes implementations and Claude does not, the next implementation can skip Claude — only while both still have quota.</div>`;
+}
+
 function renderDispatches(data) {
   const records = (data && data.records) || [];
   const stats = (data && data.stats) || {};
   if (!records.length) {
-    return `<div class="skeleton">No dispatches yet — run <b>./ai "some task"</b> and routing decisions will show up here.</div>`;
+    return `<div class="skeleton">No dispatches yet — run <b>./ai "some task"</b>.</div>`;
   }
-  const total = records.length;
+  const totalForShare = Object.values(stats).reduce((a, s) => a + s.total, 0) || records.length;
   const shareBar = SERVICES
     .filter(s => stats[s.id])
-    .map(s => `<div style="width:${(stats[s.id].total / total * 100).toFixed(1)}%;background:${s.color}"></div>`)
+    .map(s => `<div style="width:${(stats[s.id].total / totalForShare * 100).toFixed(1)}%;background:${s.color}"></div>`)
     .join("");
   const legend = SERVICES
     .filter(s => stats[s.id])
-    .map(s => `<span><span class="dot" style="background:${s.color}"></span>${s.name}: ${stats[s.id].total} total · ${stats[s.id].last_24h} in 24h</span>`)
+    .map(s => `<span><span class="dot" style="background:${s.color}"></span>${s.name}: ${stats[s.id].total} · ${stats[s.id].last_24h} in 24h</span>`)
     .join("");
   const rows = records.slice(0, 20).map(r => {
-    const exit = r.mode === "interactive"
-      ? `<span class="mode-tag">interactive</span>`
-      : (r.exit_code === 0 ? `<span class="ok-mark">✓ ok</span>` : `<span class="fail-mark">✗ exit ${esc(r.exit_code)}</span>`);
-    const why = r.forced ? "forced with --agent" : r.reason;
+    const why = r.forced ? "forced with --agent" : (r.reason || "");
     return `<tr>
-      <td style="white-space:nowrap">${fmtAgo(r.ts)}</td>
-      <td class="agent-cell"><span class="dot" style="background:${agentColor(r.agent)}"></span> ${esc(r.agent)}</td>
-      <td>${exit}</td>
+      <td style="white-space:nowrap" class="num">${fmtAgo(r.ts)}</td>
+      <td>${agentPill(r.agent)}</td>
+      <td>${dispatchResult(r)}</td>
       <td class="task-cell">${esc(r.task)}<div class="sub">${esc(why)}</div></td>
     </tr>`;
   }).join("");
   return `<div class="share-track">${shareBar}</div>
     <div class="legend">${legend}</div>
     <table>
-      <tr><th>when</th><th>agent</th><th>result</th><th>task &amp; routing reason</th></tr>
+      <tr><th>when</th><th>agent</th><th>result</th><th>task &amp; why</th></tr>
       ${rows}
     </table>`;
 }
 
 function barChart(days, valueOf, opts) {
-  // days: array of day rows; valueOf(day) -> number or [{value,color}] segments
-  const W = 460, H = 150, padB = 18, padT = 16;
+  const W = 460, H = 160, padB = 20, padT = 18;
   const n = days.length;
   if (!n) return `<div class="skeleton">no data yet</div>`;
   const totals = days.map(d => {
@@ -258,24 +501,28 @@ function barChart(days, valueOf, opts) {
     return Array.isArray(v) ? v.reduce((a, s) => a + s.value, 0) : v;
   });
   const max = Math.max(...totals, opts.minMax || 1);
-  const slot = W / n, bw = Math.min(34, slot * 0.66);
+  const slot = W / n, bw = Math.min(36, slot * 0.62);
   let out = "";
+  for (let g = 1; g <= 3; g++) {
+    const y = padT + (H - padB - padT) * (g / 4);
+    out += `<line class="gridline" x1="0" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+  }
   days.forEach((d, i) => {
     const x = slot * i + (slot - bw) / 2;
     const v = valueOf(d);
     const segments = Array.isArray(v) ? v : [{ value: v, color: opts.color }];
     let y = H - padB;
-    for (const seg of segments) {
+    segments.forEach((seg) => {
       const h = (seg.value / max) * (H - padB - padT);
       if (h > 0) {
         y -= h;
-        out += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${seg.color}"/>`;
+        out += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${seg.color}"/>`;
       }
-    }
+    });
     if (totals[i] > 0) {
-      out += `<text class="val" x="${(x + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle">${opts.fmt(totals[i])}</text>`;
+      out += `<text class="val" x="${(x + bw / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle">${opts.fmt(totals[i])}</text>`;
     }
-    out += `<text class="axis" x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${d.date.slice(5)}</text>`;
+    out += `<text class="axis" x="${(x + bw / 2).toFixed(1)}" y="${H - 5}" text-anchor="middle">${d.date.slice(5)}</text>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${out}</svg>`;
 }
@@ -283,11 +530,11 @@ function barChart(days, valueOf, opts) {
 function renderHistory(data) {
   const days = (data && data.days) || [];
   if (!days.length) {
-    return `<div class="skeleton">No history yet — snapshots accumulate every 10 minutes while the server runs.</div>`;
+    return `<div class="skeleton">No history yet — snapshots accumulate while the server runs.</div>`;
   }
   const money = (v) => "$" + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
   const spendChart = barChart(days, d => d.cursor_spend_usd,
-    { color: agentColor("cursor"), fmt: money, minMax: 1 });
+    { color: "var(--cursor)", fmt: money, minMax: 1 });
   const dispatchChart = barChart(days,
     d => SERVICES.map(s => ({ value: (d.dispatches || {})[s.id] || 0, color: s.color })),
     { fmt: v => v, minMax: 1 });
@@ -302,42 +549,45 @@ function renderHistory(data) {
       .join(" · ") || "—";
     const peak = (k) => d.peaks && d.peaks[k] != null ? d.peaks[k] + "%" : "—";
     return `<tr>
-      <td style="white-space:nowrap">${d.date}</td>
-      <td style="font-variant-numeric:tabular-nums">${d.cursor_spend_usd ? money(d.cursor_spend_usd) : "—"}</td>
-      <td>${peak("claude_five_hour")}</td>
-      <td>${peak("codex_primary")}</td>
-      <td>${d.peaks && d.peaks.gemini_requests != null ? d.peaks.gemini_requests : "—"}</td>
-      <td>${total || "—"}<div class="sub">${perAgent}</div></td>
+      <td style="white-space:nowrap" class="num">${d.date}</td>
+      <td class="num">${d.cursor_spend_usd ? money(d.cursor_spend_usd) : "—"}</td>
+      <td class="num">${peak("claude_five_hour")}</td>
+      <td class="num">${peak("codex_primary")}</td>
+      <td class="num">${d.peaks && d.peaks.gemini_requests != null ? d.peaks.gemini_requests : "—"}</td>
+      <td class="num">${total || "—"}<div class="sub">${perAgent}</div></td>
     </tr>`;
   }).join("");
   return `<div class="charts">
-      <div class="chart"><div class="chart-title">Cursor spend per day (measured $ deltas)</div>${spendChart}</div>
-      <div class="chart"><div class="chart-title">Dispatches per day by agent</div>${dispatchChart}
-        <div class="legend" style="margin-top:6px">${legend}</div></div>
+      <div class="chart"><div class="chart-title">Cursor dollars per day</div>${spendChart}</div>
+      <div class="chart"><div class="chart-title">Dispatches per day</div>${dispatchChart}
+        <div class="legend" style="margin-top:8px">${legend}</div></div>
     </div>
     <table>
-      <tr><th>date</th><th>cursor $</th><th>claude peak 5h</th><th>codex peak 5h</th><th>gemini reqs</th><th>dispatches</th></tr>
+      <tr><th>date</th><th>cursor $</th><th>claude 5h</th><th>codex 5h</th><th>gemini</th><th>dispatches</th></tr>
       ${rows}
     </table>
-    <div class="footer-note">Spend is summed from usage snapshots taken while the server runs; days before this feature shipped have dispatch counts only.</div>`;
+    <div class="footer-note">Spend is the sum of positive Cursor <code>used_usd</code> deltas while the server was running.</div>`;
 }
 
 let lastData = null;
 let lastDispatches = null;
 let lastHistory = null;
+let lastInsight = null;
 
 async function load(force) {
   const btn = document.getElementById("refresh");
   btn.disabled = true; btn.textContent = "…";
   try {
-    const [usageResp, dispatchResp, historyResp] = await Promise.all([
+    const [usageResp, dispatchResp, historyResp, insightResp] = await Promise.all([
       fetch("/api/usage" + (force ? "?refresh=1" : "")),
       fetch("/api/dispatches"),
       fetch("/api/history?days=14"),
+      fetch("/api/insight"),
     ]);
     lastData = await usageResp.json();
     lastDispatches = await dispatchResp.json();
     lastHistory = await historyResp.json();
+    lastInsight = await insightResp.json();
     render();
   } catch (e) {
     document.getElementById("updated").textContent = "fetch failed — is the server running?";
@@ -350,16 +600,31 @@ function render() {
   if (!lastData) return;
   document.getElementById("grid").innerHTML =
     SERVICES.map(s => renderCard(s, lastData.services[s.id])).join("");
+  renderNowWorking(lastDispatches);
   document.getElementById("dispatches").innerHTML = renderDispatches(lastDispatches);
   document.getElementById("history").innerHTML = renderHistory(lastHistory);
+  document.getElementById("router").innerHTML = renderRouter(lastInsight);
+  document.getElementById("efficiency").innerHTML = renderEfficiency(lastInsight);
+  document.getElementById("memory").innerHTML = renderMemory(lastInsight);
   document.getElementById("updated").textContent =
-    "updated " + new Date(lastData.fetched_at * 1000).toLocaleTimeString();
+    new Date(lastData.fetched_at * 1000).toLocaleTimeString();
+}
+
+async function pollDispatches() {
+  try {
+    const resp = await fetch("/api/dispatches");
+    lastDispatches = await resp.json();
+    renderNowWorking(lastDispatches);
+    document.getElementById("dispatches").innerHTML = renderDispatches(lastDispatches);
+  } catch (_) { /* silent — full load will retry */ }
 }
 
 document.getElementById("refresh").addEventListener("click", () => load(true));
 load(false);
 setInterval(() => load(false), 60000);
-setInterval(render, 30000); // keep countdowns fresh
+setInterval(render, 30000);
+setInterval(pollDispatches, 3000);
+setInterval(tickElapsed, 1000);
 </script>
 </body>
 </html>
